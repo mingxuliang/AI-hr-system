@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Card, Descriptions, Button, InputNumber, Form, Input, Row, Col, Typography, message, Divider, Tag, Space, Spin, Modal, Popconfirm, Select, Collapse, Avatar, Tooltip, Switch } from 'antd';
 import { useParams, useNavigate } from 'react-router-dom';
-import { EditOutlined, DeleteOutlined, PlusOutlined, SaveOutlined, CloseOutlined, DownloadOutlined, FilePdfOutlined, FileWordOutlined, LeftOutlined, RightOutlined, CheckCircleOutlined, CheckCircleFilled, CaretRightOutlined, UserOutlined, TeamOutlined, EyeInvisibleOutlined, EyeOutlined, AudioOutlined, LoadingOutlined } from '@ant-design/icons';
+import { EditOutlined, DeleteOutlined, PlusOutlined, SaveOutlined, CloseOutlined, DownloadOutlined, FilePdfOutlined, FileWordOutlined, LeftOutlined, RightOutlined, CheckCircleOutlined, CheckCircleFilled, CaretRightOutlined, UserOutlined, TeamOutlined, EyeInvisibleOutlined, EyeOutlined, AudioOutlined, LoadingOutlined, ExpandOutlined, CompressOutlined } from '@ant-design/icons';
 import request from '../../utils/request';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -33,6 +33,7 @@ const InterviewScore: React.FC = () => {
   const [showOtherScores, setShowOtherScores] = useState(false); // Toggle for collaboration mode
 
   const [submitting, setSubmitting] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   // Audio recording state
   const [recording, setRecording] = useState(false);
@@ -44,6 +45,25 @@ const InterviewScore: React.FC = () => {
       fetchInterview(id);
     }
   }, [id]);
+
+  useEffect(() => {
+    const onChange = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', onChange);
+    onChange();
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
+
+  const toggleFullscreen = async () => {
+    try {
+      if (!document.fullscreenElement) {
+        await document.documentElement.requestFullscreen();
+      } else {
+        await document.exitFullscreen();
+      }
+    } catch (e) {
+      message.error('无法切换全屏');
+    }
+  };
   
   // ... (polling logic)
 
@@ -441,6 +461,9 @@ const InterviewScore: React.FC = () => {
          {(user?.role === 'admin' || user?.role === 'hr') && (
              <Button danger onClick={handleForceAggregate}>强制汇总</Button>
          )}
+         <Button icon={isFullscreen ? <CompressOutlined /> : <ExpandOutlined />} onClick={toggleFullscreen}>
+           {isFullscreen ? '退出全屏' : '全屏'}
+         </Button>
          <div style={{ display: 'flex', alignItems: 'center', marginRight: 16 }}>
              <Text style={{ marginRight: 8, fontSize: 12 }}>协作模式</Text>
              <Switch 
@@ -456,7 +479,7 @@ const InterviewScore: React.FC = () => {
   );
 
   return (
-    <div style={{ height: 'calc(100vh - 100px)', display: 'flex', gap: '24px' }}>
+    <div style={{ height: isFullscreen ? '100vh' : 'calc(100vh - 100px)', display: 'flex', gap: '24px' }}>
       {/* Left: Resume Preview */}
       <div style={{ flex: 1, background: '#fff', borderRadius: '16px', border: '1px solid #E2E8F0', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
         <div style={{ padding: '12px 24px', borderBottom: '1px solid #E2E8F0', background: '#F8FAFC', display: 'flex', justifyContent: 'space-between' }}>
