@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Card, Descriptions, Button, Result, Typography, Divider, Tag, List, Space, message, Dropdown } from 'antd';
+import { Card, Descriptions, Button, Result, Typography, Divider, Tag, List, Space, message, Dropdown, Spin } from 'antd';
 import type { MenuProps } from 'antd';
 import { useParams, useNavigate } from 'react-router-dom';
 import { DownloadOutlined, FileMarkdownOutlined, FilePdfOutlined, DownOutlined } from '@ant-design/icons';
@@ -24,8 +24,8 @@ const InterviewResultPage: React.FC = () => {
     }
   }, [id]);
 
-  const fetchInterview = async (interviewId: string) => {
-    setLoading(true);
+  const fetchInterview = async (interviewId: string, silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const res = await request.get(`/interviews/${interviewId}`) as any;
       if (res && res.scores) {
@@ -36,9 +36,19 @@ const InterviewResultPage: React.FC = () => {
     } catch (error) {
       // message.error('获取面试详情失败');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
+
+  const isGeneratingEvaluation = !!interview && interview.result === 'pending' && !interview.evaluation;
+
+  useEffect(() => {
+    if (!id || !isGeneratingEvaluation) return;
+    const interval = setInterval(() => {
+      fetchInterview(id, true);
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [id, isGeneratingEvaluation]);
 
   const handleConfirmResult = async (result: string) => {
       try {
@@ -105,6 +115,21 @@ const InterviewResultPage: React.FC = () => {
 
   if (loading || !interview) {
     return <Card loading={loading} />;
+  }
+
+  if (isGeneratingEvaluation) {
+    return (
+      <Card id="interview-result-content">
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 360 }}>
+          <Spin size="large" />
+          <Title level={4} style={{ marginTop: 16 }}>正在生成面试评估意见</Title>
+          <Text type="secondary">AI 正在分析评分与评语，请稍候…</Text>
+          <div style={{ marginTop: 16 }}>
+            <Button onClick={() => navigate('/interviews')}>返回列表</Button>
+          </div>
+        </div>
+      </Card>
+    );
   }
 
   const getStatusIcon = (status: string) => {
@@ -196,7 +221,7 @@ const InterviewResultPage: React.FC = () => {
             <Result
                 status="info"
                 title="面试评分已提交"
-                subTitle="AI 已生成评估意见，请确认最终结果"
+                subTitle="AI 评估意见已生成，请确认最终结果"
                 extra={
                     <div id="result-extra-buttons">
                         <Button type="primary" key="console" onClick={() => navigate('/interviews')} style={{ marginRight: 8 }}>

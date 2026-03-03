@@ -1,9 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { Card, Descriptions, Button, InputNumber, Form, Input, Row, Col, Typography, message, Divider, Tag, Space, Spin, Modal, Popconfirm, Select, Collapse, Avatar, Tooltip, Switch } from 'antd';
+import { Card, Descriptions, Button, InputNumber, Form, Input, Row, Col, Typography, message, Divider, Tag, Space, Spin, Modal, Popconfirm, Select, Collapse, Tooltip } from 'antd';
 import { useParams, useNavigate } from 'react-router-dom';
-import { EditOutlined, DeleteOutlined, PlusOutlined, SaveOutlined, CloseOutlined, DownloadOutlined, FilePdfOutlined, FileWordOutlined, LeftOutlined, RightOutlined, CheckCircleOutlined, CheckCircleFilled, CaretRightOutlined, UserOutlined, TeamOutlined, EyeInvisibleOutlined, EyeOutlined, AudioOutlined, LoadingOutlined, ExpandOutlined, CompressOutlined } from '@ant-design/icons';
+import { EditOutlined, DeleteOutlined, PlusOutlined, SaveOutlined, CloseOutlined, DownloadOutlined, FilePdfOutlined, FileWordOutlined, LeftOutlined, RightOutlined, CheckCircleOutlined, CheckCircleFilled, CaretRightOutlined, AudioOutlined, LoadingOutlined, ExpandOutlined, CompressOutlined } from '@ant-design/icons';
 import request from '../../utils/request';
-import { useAuth } from '../../contexts/AuthContext';
 
 const { Title, Text, Paragraph } = Typography;
 const { TextArea } = Input;
@@ -11,7 +10,6 @@ const { TextArea } = Input;
 const InterviewScore: React.FC = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { user } = useAuth();
   const [interview, setInterview] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [questions, setQuestions] = useState<any[]>([]);
@@ -27,10 +25,6 @@ const InterviewScore: React.FC = () => {
   // Scoring state
   const [scores, setScores] = useState<Record<string, number>>({});
   const [comments, setComments] = useState<Record<string, string>>({});
-  
-  // Panel state
-  const [panels, setPanels] = useState<any[]>([]);
-  const [showOtherScores, setShowOtherScores] = useState(false); // Toggle for collaboration mode
 
   const [submitting, setSubmitting] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -85,17 +79,6 @@ const InterviewScore: React.FC = () => {
       
       setInterview(res);
       setQuestions(res.questions || []);
-      
-      // Load panels if available
-      if (res.panels) {
-          setPanels(res.panels);
-          // Pre-fill my scores if I submitted before
-          const myPanel = res.panels.find((p: any) => p.interviewer_id === user?.id);
-          if (myPanel) {
-              setScores(myPanel.scores || {});
-              setComments(myPanel.comments || {});
-          }
-      }
     } catch (error) {
       if (!silent) message.error('获取面试详情失败');
     } finally {
@@ -126,7 +109,7 @@ const InterviewScore: React.FC = () => {
     return () => {
         if (interval) clearInterval(interval);
     };
-  }, [id, interview?.status, showOtherScores]);
+  }, [id, interview?.status]);
 
   const startRecording = async () => {
     try {
@@ -278,77 +261,18 @@ const InterviewScore: React.FC = () => {
 
     try {
       setSubmitting(true);
-      // Submit as panel score
-      const res = await request.post(`/interviews/${id}/panel-score`, { 
+      await request.post(`/interviews/${id}/score`, {
         scores,
         comments 
       }) as any;
-      message.success('提交评分成功');
-      
-      // Check if auto-aggregation triggered
-      if (res.interview_status === 'completed') {
-          message.success('所有面试官评分已完成，正在生成报告...');
-          navigate(`/interviews/${id}/result`);
-          return;
-      }
-      
-      // If Admin or HR, ask if they want to aggregate and finalize
-      if (user?.role === 'admin' || user?.role === 'hr') {
-          Modal.confirm({
-              title: '汇总评分',
-              content: '是否立即汇总所有面试官评分并生成最终报告？',
-              okText: '汇总并生成报告',
-              cancelText: '稍后',
-              onOk: async () => {
-                  try {
-                      await request.post(`/interviews/${id}/aggregate`);
-                      message.success('正在生成最终报告...');
-                      navigate(`/interviews/${id}/result`);
-                  } catch (e) {
-                      message.error('汇总失败');
-                  }
-              }
-          });
-      } else {
-          message.info('评分已保存，请等待其他面试官完成评分');
-      }
+      message.success('评分已提交，正在生成报告...');
+      if (id) fetchInterview(id, true);
       
     } catch (error) {
       message.error('提交评分失败，请稍后重试');
     } finally {
       setSubmitting(false);
     }
-  };
-  
-  // Render other interviewers' scores
-  const renderOtherScores = () => {
-      if (!showOtherScores) return null;
-      
-      const otherPanels = panels.filter(p => p.interviewer_id !== user?.id && p.scores && p.scores[currentQuestionIndex] !== undefined);
-      
-      if (otherPanels.length === 0) return null;
-      
-      return (
-          <div style={{ marginTop: 16, padding: 12, background: '#F0F9FF', borderRadius: 8, border: '1px dashed #BAE6FD' }}>
-              <Text strong style={{ color: '#0369A1', marginBottom: 8, display: 'block' }}><TeamOutlined /> 其他面试官评分</Text>
-              <Space direction="vertical" style={{ width: '100%' }}>
-                  {otherPanels.map((p, idx) => (
-                      <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <Space>
-                              <Avatar size="small" icon={<UserOutlined />} style={{ backgroundColor: '#87d068' }} />
-                              <Text type="secondary">面试官 {p.interviewer_id.slice(0, 4)}...</Text>
-                          </Space>
-                          <Space>
-                              <Tag color="blue">{p.scores[currentQuestionIndex]}分</Tag>
-                              {p.comments && p.comments[currentQuestionIndex] && (
-                                  <Text type="secondary" style={{ fontSize: 12, maxWidth: 200 }} ellipsis>{p.comments[currentQuestionIndex]}</Text>
-                              )}
-                          </Space>
-                      </div>
-                  ))}
-              </Space>
-          </div>
-      );
   };
 
   const fileUrl = interview?.resume?.file_path ? `/${interview.resume.file_path}` : '';
@@ -435,44 +359,11 @@ const InterviewScore: React.FC = () => {
     </>
   );
 
-  const handleForceAggregate = async () => {
-      try {
-          Modal.confirm({
-              title: '强制汇总',
-              content: '确定要强制汇总当前评分并生成报告吗？未提交的面试官评分将被忽略。',
-              okText: '确认',
-              cancelText: '取消',
-              onOk: async () => {
-                    if (id) {
-                       await request.post(`/interviews/${id}/aggregate`);
-                       message.success('正在生成最终报告...');
-                       // Wait a bit or rely on polling
-                       setTimeout(() => fetchInterview(id, true), 2000);
-                    }
-               }
-           });
-      } catch (e) {
-          message.error('操作失败');
-      }
-  };
-
   const headerExtra = (
       <Space>
-         {(user?.role === 'admin' || user?.role === 'hr') && (
-             <Button danger onClick={handleForceAggregate}>强制汇总</Button>
-         )}
          <Button icon={isFullscreen ? <CompressOutlined /> : <ExpandOutlined />} onClick={toggleFullscreen}>
            {isFullscreen ? '退出全屏' : '全屏'}
          </Button>
-         <div style={{ display: 'flex', alignItems: 'center', marginRight: 16 }}>
-             <Text style={{ marginRight: 8, fontSize: 12 }}>协作模式</Text>
-             <Switch 
-                checkedChildren={<EyeOutlined />} 
-                unCheckedChildren={<EyeInvisibleOutlined />} 
-                checked={showOtherScores} 
-                onChange={setShowOtherScores} 
-             />
-         </div>
          <Button icon={<PlusOutlined />} onClick={handleAddQuestionClick}>添加题目</Button>
          <Button type="primary" onClick={handleSubmitScore} loading={submitting}>提交评分</Button>
       </Space>
@@ -680,7 +571,6 @@ const InterviewScore: React.FC = () => {
                               )}
                           </div>
                           
-                          {renderOtherScores()}
                         </Col>
                       </Row>
                     </div>
