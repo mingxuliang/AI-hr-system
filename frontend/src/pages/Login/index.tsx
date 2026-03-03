@@ -8,10 +8,16 @@ import { useNavigate, useLocation } from 'react-router-dom';
 const { Title, Text } = Typography;
 
 const Login: React.FC = () => {
-  const { login } = useAuth();
+  const { login, isAuthenticated, loading: authLoading } = useAuth();
   const navigate = useNavigate();
-  const location = useLocation();
+  useLocation();
   const [loading, setLoading] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!authLoading && isAuthenticated) {
+      navigate('/dashboard', { replace: true });
+    }
+  }, [authLoading, isAuthenticated, navigate]);
 
   const onFinish = async (values: any) => {
     setLoading(true);
@@ -29,9 +35,7 @@ const Login: React.FC = () => {
       
       await login((res as any).access_token);
       message.success('登录成功');
-      
-      const from = (location.state as any)?.from?.pathname || '/';
-      navigate(from, { replace: true });
+      navigate('/dashboard', { replace: true });
     } catch (error) {
       message.error('登录失败，请检查账号密码');
     } finally {
