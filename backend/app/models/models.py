@@ -132,7 +132,7 @@ class Interview(Base):
     interviewer_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True) # Link to User
     interviewer = Column(String) # Keep for backward compatibility or display name
     round = Column(Integer, default=1) # Interview round
-    interview_time = Column(DateTime)
+    interview_time = Column(DateTime(timezone=True))
     questions = Column(JSON)
     scores = Column(JSON)
     comments = Column(JSON)

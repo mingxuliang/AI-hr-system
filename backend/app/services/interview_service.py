@@ -160,9 +160,17 @@ from fastapi import HTTPException
 from app.services.ai_service import generate_interview_questions, generate_interview_evaluation
 from app.services.resume_service import read_file_content
 import json
+from datetime import timezone
 
 from app.config.database import SessionLocal
 from fastapi import BackgroundTasks
+
+def _normalize_dt_utc(dt):
+    if dt is None:
+        return None
+    if getattr(dt, "tzinfo", None) is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
 
 def generate_questions_background(interview_id: UUID, question_bank_ids: list, question_count: int):
     db = SessionLocal()
@@ -220,7 +228,7 @@ def create_interview(db: Session, interview: InterviewCreate, background_tasks: 
         resume_id=interview.resume_id,
         position_id=interview.position_id,
         interviewer=interview.interviewer,
-        interview_time=interview.interview_time,
+        interview_time=_normalize_dt_utc(interview.interview_time),
         questions=[], # Initially empty
         status=InterviewStatus.SCHEDULED,
         panel_members=interview.panel_members
@@ -335,6 +343,8 @@ def update_interview(db: Session, interview_id: UUID, interview: InterviewUpdate
     
     update_data = interview.dict(exclude_unset=True)
     for key, value in update_data.items():
+        if key == "interview_time":
+            value = _normalize_dt_utc(value)
         setattr(db_interview, key, value)
     
     db.commit()
