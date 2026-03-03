@@ -1,0 +1,239 @@
+from openai import OpenAI
+import os
+from typing import Dict, Any
+import json
+from dotenv import load_dotenv
+from app.utils.prompt_manager import prompt_manager
+from app.config.database import SessionLocal
+from app.models.models import SystemConfig
+
+load_dotenv()
+
+_DEFAULT_PROVIDER = "dashscope"
+_DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+_DEFAULT_MODEL = "qwen3.5-plus"
+_DEFAULT_TEMPERATURE = 0.2
+_DEFAULT_BASE_URL_BY_PROVIDER = {
+    "dashscope": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "openai": "https://api.openai.com/v1",
+    "openai_compatible": None,
+}
+
+_client_cache = None
+_client_cache_key = None
+
+
+def _get_llm_config() -> Dict[str, Any]:
+    db = SessionLocal()
+    try:
+        cfg = db.query(SystemConfig).first()
+        llm_provider = (cfg.llm_provider if cfg else None) or _DEFAULT_PROVIDER
+        llm_base_url = (cfg.llm_base_url if cfg else None) or _DEFAULT_BASE_URL_BY_PROVIDER.get(llm_provider) or _DEFAULT_BASE_URL
+        llm_model = (cfg.llm_model if cfg else None) or _DEFAULT_MODEL
+        llm_temperature = (cfg.llm_temperature if cfg and cfg.llm_temperature is not None else None)
+        llm_temperature = _DEFAULT_TEMPERATURE if llm_temperature is None else llm_temperature
+        llm_max_tokens = cfg.llm_max_tokens if cfg else None
+        llm_api_key = (cfg.llm_api_key if cfg else None)
+        return {
+            "llm_provider": llm_provider,
+            "llm_base_url": llm_base_url,
+            "llm_model": llm_model,
+            "llm_temperature": llm_temperature,
+            "llm_max_tokens": llm_max_tokens,
+            "llm_api_key": llm_api_key,
+        }
+    finally:
+        db.close()
+
+
+def _get_client() -> OpenAI:
+    global _client_cache, _client_cache_key
+    cfg = _get_llm_config()
+    key = (cfg.get("llm_base_url"), cfg.get("llm_api_key"))
+    if _client_cache is not None and _client_cache_key == key:
+        return _client_cache
+    _client_cache_key = key
+    _client_cache = OpenAI(
+        api_key=cfg.get("llm_api_key"),
+        base_url=cfg.get("llm_base_url"),
+    )
+    return _client_cache
+
+def analyze_resume(resume_text: str, position_description: str) -> Dict[str, Any]:
+    prompt_data = prompt_manager.get_prompt(
+        "analyze_resume", 
+        resume_text=resume_text, 
+        position_description=position_description
+    )
+    
+    if not prompt_data.get("user"):
+        print("Failed to load prompt for analyze_resume")
+        return {}
+        
+    try:
+        cfg = _get_llm_config()
+        extra = {"temperature": cfg["llm_temperature"]}
+        if cfg["llm_max_tokens"] is not None:
+            extra["max_tokens"] = cfg["llm_max_tokens"]
+        completion = _get_client().chat.completions.create(
+            model=cfg["llm_model"],
+            messages=[
+                {'role': 'system', 'content': prompt_data['system']},
+                {'role': 'user', 'content': prompt_data['user']}
+            ],
+            response_format={"type": "json_object"},
+            **extra,
+        )
+        result = json.loads(completion.choices[0].message.content)
+        return result
+    except Exception as e:
+        print(f"AI analysis failed: {e}")
+        return {}
+
+def generate_resume_markdown(resume_text: str) -> str:
+    prompt_data = prompt_manager.get_prompt(
+        "generate_resume_markdown", 
+        resume_text=resume_text
+    )
+    
+    if not prompt_data.get("user"):
+        return resume_text
+        
+    try:
+        cfg = _get_llm_config()
+        extra = {"temperature": cfg["llm_temperature"]}
+        if cfg["llm_max_tokens"] is not None:
+            extra["max_tokens"] = cfg["llm_max_tokens"]
+        completion = _get_client().chat.completions.create(
+            model=cfg["llm_model"],
+            messages=[
+                {'role': 'system', 'content': prompt_data['system']},
+                {'role': 'user', 'content': prompt_data['user']}
+            ],
+            **extra,
+        )
+        content = completion.choices[0].message.content
+        # Remove potential markdown code block markers
+        content = content.replace("```markdown", "").replace("```", "").strip()
+        return content
+    except Exception as e:
+        print(f"Markdown generation failed: {e}")
+        return resume_text
+
+def generate_interview_questions(
+    resume_data: Dict, 
+    position_description: str,
+    question_bank_content: str = "",
+    count: int = 5
+) -> list:
+    prompt_data = prompt_manager.get_prompt(
+        "generate_interview_questions", 
+        resume_data=json.dumps(resume_data, ensure_ascii=False), 
+        position_description=position_description,
+        question_bank_content=question_bank_content,
+        count=count
+    )
+    
+    if not prompt_data.get("user"):
+        return []
+        
+    try:
+        cfg = _get_llm_config()
+        extra = {"temperature": cfg["llm_temperature"]}
+        if cfg["llm_max_tokens"] is not None:
+            extra["max_tokens"] = cfg["llm_max_tokens"]
+        completion = _get_client().chat.completions.create(
+            model=cfg["llm_model"],
+            messages=[
+                {'role': 'system', 'content': prompt_data['system']},
+                {'role': 'user', 'content': prompt_data['user']}
+            ],
+            response_format={"type": "json_object"},
+            **extra,
+        )
+        result = json.loads(completion.choices[0].message.content)
+        if isinstance(result, list):
+            return result
+        return result.get("questions", [])
+    except Exception as e:
+        print(f"Question generation failed: {e}")
+        return []
+
+def generate_interview_evaluation(
+    questions: list, 
+    scores: Dict[str, Any], 
+    total_score: int,
+    panel_details: str = "",
+    transcripts: str = "" # New parameter for candidate audio transcripts
+) -> Dict[str, str]:
+    prompt_data = prompt_manager.get_prompt(
+        "generate_interview_evaluation", 
+        questions=json.dumps(questions, ensure_ascii=False), 
+        scores=json.dumps(scores, ensure_ascii=False),
+        total_score=total_score,
+        panel_details=panel_details,
+        transcripts=transcripts
+    )
+    
+    if not prompt_data.get("user"):
+        return {"evaluation": "生成评价失败", "suggestion": "waitlist"}
+        
+    try:
+        cfg = _get_llm_config()
+        extra = {"temperature": cfg["llm_temperature"]}
+        if cfg["llm_max_tokens"] is not None:
+            extra["max_tokens"] = cfg["llm_max_tokens"]
+        completion = _get_client().chat.completions.create(
+            model=cfg["llm_model"],
+            messages=[
+                {'role': 'system', 'content': prompt_data['system']},
+                {'role': 'user', 'content': prompt_data['user']}
+            ],
+            response_format={"type": "json_object"},
+            **extra,
+        )
+        result = json.loads(completion.choices[0].message.content)
+        return result
+    except Exception as e:
+        print(f"Evaluation generation failed: {e}")
+        return {"evaluation": "生成评价失败", "suggestion": "waitlist"}
+
+
+def generate_coding_test_evaluation(
+    title: str,
+    description: str,
+    language: str,
+    code: str,
+    run_result: Dict[str, Any],
+) -> Dict[str, Any]:
+    prompt_data = prompt_manager.get_prompt(
+        "generate_coding_test_evaluation",
+        title=title,
+        description=description,
+        language=language,
+        code=code,
+        run_result=json.dumps(run_result, ensure_ascii=False),
+    )
+
+    if not prompt_data.get("user"):
+        return {"evaluation": "生成评价失败"}
+
+    try:
+        cfg = _get_llm_config()
+        extra = {"temperature": cfg["llm_temperature"]}
+        if cfg["llm_max_tokens"] is not None:
+            extra["max_tokens"] = cfg["llm_max_tokens"]
+        completion = _get_client().chat.completions.create(
+            model=cfg["llm_model"],
+            messages=[
+                {"role": "system", "content": prompt_data["system"]},
+                {"role": "user", "content": prompt_data["user"]},
+            ],
+            response_format={"type": "json_object"},
+            **extra,
+        )
+        result = json.loads(completion.choices[0].message.content)
+        return result
+    except Exception as e:
+        print(f"Coding evaluation generation failed: {e}")
+        return {"evaluation": "生成评价失败"}

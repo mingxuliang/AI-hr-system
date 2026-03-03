@@ -1,0 +1,126 @@
+from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from sqlalchemy.orm import Session
+from jose import JWTError, jwt
+from app.config.database import get_db
+from app.models.models import User, UserRole
+from app.schemas.user import Token, UserResponse, UserLogin, TokenData, UserCreate, UserUpdateMe, ChangePasswordRequest
+from app.core.security import verify_password, create_access_token, SECRET_KEY, ALGORITHM, check_roles, get_password_hash, get_current_user_dep
+from datetime import timedelta
+from typing import List
+
+router = APIRouter(
+    prefix="/auth",
+    tags=["auth"]
+)
+
+# Reuse the dependency from security.py to avoid duplication and mismatch
+get_current_user = get_current_user_dep
+
+@router.post("/token", response_model=Token)
+def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    print(f"Login attempt: {form_data.username}")
+    user = db.query(User).filter(User.email == form_data.username).first()
+    if not user:
+        print(f"User not found: {form_data.username}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    if not verify_password(form_data.password, user.hashed_password):
+        print(f"Invalid password for user: {form_data.username}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    access_token_expires = timedelta(minutes=60 * 24 * 30) # 30 days
+    access_token = create_access_token(
+        data={"sub": user.email}, expires_delta=access_token_expires
+    )
+    return {"access_token": access_token, "token_type": "bearer"}
+
+@router.post("/login", response_model=Token)
+def login(login_data: UserLogin, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.email == login_data.email).first()
+    if not user or not verify_password(login_data.password, user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect email or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    access_token_expires = timedelta(minutes=60 * 24 * 30)
+    access_token = create_access_token(
+        data={"sub": user.email}, expires_delta=access_token_expires
+    )
+    return {"access_token": access_token, "token_type": "bearer"}
+
+@router.get("/me", response_model=UserResponse)
+def read_users_me(current_user: User = Depends(get_current_user)):
+    return current_user
+
+@router.put("/me", response_model=UserResponse)
+def update_users_me(
+    payload: UserUpdateMe,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    data = payload.dict(exclude_unset=True)
+    if "full_name" in data:
+        current_user.full_name = data["full_name"]
+    db.add(current_user)
+    db.commit()
+    db.refresh(current_user)
+    return current_user
+
+@router.post("/change-password")
+def change_password(
+    payload: ChangePasswordRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if not verify_password(payload.current_password, current_user.hashed_password):
+        raise HTTPException(status_code=400, detail="当前密码错误")
+    current_user.hashed_password = get_password_hash(payload.new_password)
+    db.add(current_user)
+    db.commit()
+    return {"success": True}
+
+# Admin routes for user management
+@router.get("/users", response_model=List[UserResponse])
+def get_users(
+    skip: int = 0, 
+    limit: int = 100, 
+    db: Session = Depends(get_db),
+    current_user: UserResponse = Depends(check_roles([UserRole.ADMIN]))
+):
+    return db.query(User).offset(skip).limit(limit).all()
+
+@router.post("/users", response_model=UserResponse)
+def create_user(
+    user: UserCreate, 
+    db: Session = Depends(get_db),
+    current_user: UserResponse = Depends(check_roles([UserRole.ADMIN]))
+):
+    db_user = db.query(User).filter(User.email == user.email).first()
+    if db_user:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    
+    hashed_password = get_password_hash(user.password)
+    new_user = User(
+        email=user.email,
+        hashed_password=hashed_password,
+        full_name=user.full_name,
+        role=user.role
+    )
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    return new_user
+
+@router.get("/interviewers", response_model=List[UserResponse])
+def get_interviewers(db: Session = Depends(get_db)):
+    # Helper to get all interviewers (HR and Interviewer roles can be assigned)
+    # Accessible by authenticated users to assign to interviews
+    return db.query(User).filter(User.role.in_([UserRole.HR, UserRole.INTERVIEWER, UserRole.ADMIN])).all()

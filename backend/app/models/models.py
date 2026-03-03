@@ -1,0 +1,237 @@
+from sqlalchemy import Column, String, Boolean, DateTime, Text, Enum, JSON, Integer, ForeignKey, Float
+from sqlalchemy.dialects.postgresql import UUID, ARRAY
+import uuid
+from datetime import datetime
+from app.models.base import Base
+import enum
+from sqlalchemy.orm import relationship
+
+class UserRole(str, enum.Enum):
+    ADMIN = "admin"
+    HR = "hr"
+    INTERVIEWER = "interviewer"
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    email = Column(String, unique=True, index=True, nullable=False)
+    hashed_password = Column(String, nullable=False)
+    full_name = Column(String)
+    role = Column(Enum(UserRole), default=UserRole.HR)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class PositionStatus(str, enum.Enum):
+    OPEN = "open"
+    CLOSED = "closed"
+    PUBLISHED = "published"
+
+class Position(Base):
+    __tablename__ = "positions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    title = Column(String, nullable=False)
+    description = Column(Text, nullable=False)
+    requirements = Column(Text)
+    salary_range = Column(String)
+    location = Column(String)
+    department = Column(String)
+    status = Column(Enum(PositionStatus), default=PositionStatus.OPEN)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class QuestionCategory(str, enum.Enum):
+    TECHNICAL = "technical"
+    MANAGEMENT = "management"
+    HR = "hr"
+    OTHER = "other"
+
+class QuestionDifficulty(str, enum.Enum):
+    JUNIOR = "junior"
+    INTERMEDIATE = "intermediate"
+    SENIOR = "senior"
+
+class QuestionBank(Base):
+    __tablename__ = "question_banks"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = Column(String, nullable=False)
+    category = Column(Enum(QuestionCategory), default=QuestionCategory.TECHNICAL)
+    difficulty = Column(Enum(QuestionDifficulty), default=QuestionDifficulty.INTERMEDIATE)
+    tags = Column(ARRAY(String))
+    questions = Column(JSON)
+    source_file = Column(String)
+    position_id = Column(UUID(as_uuid=True), ForeignKey("positions.id"))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    position = relationship("Position")
+
+class ScreeningResult(str, enum.Enum):
+    PENDING = "pending"
+    PASSED = "passed"
+    REJECTED = "rejected"
+    WAITLIST = "waitlist"
+
+class ResumeStatus(str, enum.Enum):
+    PENDING_SCREENING = "pending_screening"
+    PENDING_REVIEW = "pending_review"
+    PENDING_INTERVIEW = "pending_interview"
+    INTERVIEW_PASSED = "interview_passed" # Initial interview passed
+    INTERVIEW_FAILED = "interview_failed"
+    OFFER_PENDING = "offer_pending"
+    OFFER_ACCEPTED = "offer_accepted"
+    OFFER_REJECTED = "offer_rejected"
+    ONBOARDING = "onboarding"
+    COMPLETED = "completed"
+    REJECTED = "rejected"
+
+class Resume(Base):
+    __tablename__ = "resumes"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    candidate_name = Column(String)
+    contact = Column(String)
+    email = Column(String)
+    position_id = Column(UUID(as_uuid=True), ForeignKey("positions.id"))
+    file_path = Column(String)
+    raw_text = Column(Text)
+    resume_markdown = Column(Text)
+    parsed_data = Column(JSON)
+    match_score = Column(Integer)
+    parse_status = Column(String, default="processing")
+    parse_error = Column(Text)
+    parsed_at = Column(DateTime)
+    screening_result = Column(Enum(ScreeningResult), default=ScreeningResult.PENDING)
+    ai_review = Column(Text)
+    hr_review = Column(Text)
+    status = Column(Enum(ResumeStatus), default=ResumeStatus.PENDING_SCREENING)
+    stage = Column(String, default="new") # For Kanban: new, screening, interview, offer, hired, rejected
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    position = relationship("Position")
+
+class InterviewResult(str, enum.Enum):
+    PENDING = "pending"
+    PASSED = "passed"
+    REJECTED = "rejected"
+    WAITLIST = "waitlist"
+
+class InterviewStatus(str, enum.Enum):
+    SCHEDULED = "scheduled"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
+
+class Interview(Base):
+    __tablename__ = "interviews"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    resume_id = Column(UUID(as_uuid=True), ForeignKey("resumes.id"))
+    position_id = Column(UUID(as_uuid=True), ForeignKey("positions.id"))
+    interviewer_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True) # Link to User
+    interviewer = Column(String) # Keep for backward compatibility or display name
+    round = Column(Integer, default=1) # Interview round
+    interview_time = Column(DateTime)
+    questions = Column(JSON)
+    scores = Column(JSON)
+    comments = Column(JSON)
+    total_score = Column(Integer)
+    panel_members = Column(JSON) # List of user IDs for the panel
+    audio_records = Column(JSON) # Audio file paths per question (aggregated or primary)
+    transcripts = Column(JSON) # Transcribed text per question (aggregated or primary)
+    result = Column(Enum(InterviewResult), default=InterviewResult.PENDING)
+    evaluation = Column(Text)
+    suggestion = Column(Text)
+    status = Column(Enum(InterviewStatus), default=InterviewStatus.SCHEDULED)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    resume = relationship("Resume")
+    position = relationship("Position")
+    interviewer_user = relationship("User")
+    panels = relationship("InterviewPanel", back_populates="interview")
+
+class InterviewPanel(Base):
+    __tablename__ = "interview_panels"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    interview_id = Column(UUID(as_uuid=True), ForeignKey("interviews.id"))
+    interviewer_id = Column(UUID(as_uuid=True), ForeignKey("users.id"))
+    scores = Column(JSON) # Individual scores
+    comments = Column(JSON) # Individual comments
+    audio_records = Column(JSON) # Audio file paths per question
+    transcripts = Column(JSON) # Transcribed text per question
+    total_score = Column(Integer)
+    is_submitted = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    interview = relationship("Interview", back_populates="panels")
+    interviewer_user = relationship("User")
+
+class CodingTestStatus(str, enum.Enum):
+    DRAFT = "draft"
+    PUBLISHED = "published"
+    CLOSED = "closed"
+
+class CodingTest(Base):
+    __tablename__ = "coding_tests"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    title = Column(String, nullable=False)
+    description = Column(Text, nullable=False)
+    difficulty = Column(String, default="intermediate")
+    language = Column(String, default="javascript")
+    starter_code = Column(Text)
+    test_cases = Column(JSON)
+    time_limit_ms = Column(Integer, default=3000)
+    memory_limit_mb = Column(Integer, default=256)
+    public_token = Column(String, unique=True, index=True, nullable=False)
+    status = Column(Enum(CodingTestStatus), default=CodingTestStatus.DRAFT)
+    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"))
+    resume_id = Column(UUID(as_uuid=True), ForeignKey("resumes.id"), nullable=True)
+    position_id = Column(UUID(as_uuid=True), ForeignKey("positions.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    creator = relationship("User")
+    resume = relationship("Resume")
+    position = relationship("Position")
+    submissions = relationship("CodingSubmission", back_populates="coding_test")
+
+class CodingSubmissionStatus(str, enum.Enum):
+    DRAFT = "draft"
+    SUBMITTED = "submitted"
+    EVALUATED = "evaluated"
+
+class CodingSubmission(Base):
+    __tablename__ = "coding_submissions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    coding_test_id = Column(UUID(as_uuid=True), ForeignKey("coding_tests.id"))
+    candidate_name = Column(String)
+    candidate_email = Column(String)
+    language = Column(String, default="javascript")
+    code = Column(Text, nullable=False)
+    run_result = Column(JSON)
+    passed = Column(Boolean, default=False)
+    score = Column(Integer, default=0)
+    ai_evaluation = Column(Text)
+    status = Column(Enum(CodingSubmissionStatus), default=CodingSubmissionStatus.DRAFT)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    submitted_at = Column(DateTime)
+    evaluated_at = Column(DateTime)
+
+    coding_test = relationship("CodingTest", back_populates="submissions")
+
+class SystemConfig(Base):
+    __tablename__ = "system_configs"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    llm_provider = Column(String, default="dashscope")
+    llm_base_url = Column(String, default="https://dashscope.aliyuncs.com/compatible-mode/v1")
+    llm_api_key = Column(String)
+    llm_model = Column(String, default="qwen3.5-plus")
+    llm_temperature = Column(Float, default=0.2)
+    llm_max_tokens = Column(Integer)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
