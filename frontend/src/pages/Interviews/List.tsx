@@ -8,6 +8,7 @@ const InterviewsList: React.FC = () => {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined);
+  const [interviewerNameMap, setInterviewerNameMap] = useState<Record<string, string>>({});
   const navigate = useNavigate();
 
   const fetchInterviews = async () => {
@@ -26,7 +27,28 @@ const InterviewsList: React.FC = () => {
     fetchInterviews();
   }, []);
 
+  useEffect(() => {
+    request.get('/auth/interviewers')
+      .then((res: any) => {
+        const map: Record<string, string> = {};
+        (res || []).forEach((u: any) => {
+          const name = u?.full_name || u?.email || u?.id;
+          if (u?.id) map[String(u.id)] = name;
+        });
+        setInterviewerNameMap(map);
+      })
+      .catch(() => {});
+  }, []);
+
   const filteredData = statusFilter ? (data as any[]).filter((i) => i?.status === statusFilter) : data;
+
+  const getInterviewerText = (record: any) => {
+    const members = Array.isArray(record?.panel_members) ? record.panel_members : [];
+    if (members.length > 0) {
+      return members.map((id: any) => interviewerNameMap[String(id)] || String(id)).join('、');
+    }
+    return record?.interviewer || '-';
+  };
 
   const handleDelete = (id: string) => {
     Modal.confirm({
@@ -60,7 +82,29 @@ const InterviewsList: React.FC = () => {
       key: 'position',
       render: (text: string) => <span style={{ color: '#64748B' }}>{text || '未知'}</span>
     },
-    { title: '面试官', dataIndex: 'interviewer', key: 'interviewer' },
+    {
+      title: '面试官',
+      key: 'interviewer',
+      render: (_: any, record: any) => {
+        const full = getInterviewerText(record);
+        return (
+          <Tooltip title={full}>
+            <span
+              style={{
+                display: 'inline-block',
+                maxWidth: 220,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                verticalAlign: 'bottom',
+              }}
+            >
+              {full}
+            </span>
+          </Tooltip>
+        );
+      },
+    },
     { 
       title: '面试时间', 
       dataIndex: 'interview_time', 
