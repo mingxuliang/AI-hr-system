@@ -37,7 +37,6 @@ interface Position {
   urgency: string;
   position_type: string;
   headcount: number;
-  reports_to: string | null;
   hiring_manager_id: string | null;
   hiring_manager_name: string | null;
   created_at: string;
@@ -460,12 +459,7 @@ const PositionsList: React.FC = () => {
               </Select>
             </Form.Item>
 
-            <Form.Item
-              name="reports_to"
-              label="汇报对象"
-            >
-              <Input placeholder="例如：技术总监" size="large" />
-            </Form.Item>
+ 
           </div>
 
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
@@ -556,7 +550,6 @@ const PositionsList: React.FC = () => {
               <Descriptions.Item label="薪资范围">{viewingRecord.salary_range || '-'}</Descriptions.Item>
               <Descriptions.Item label="招聘人数">{viewingRecord.headcount || 1} 人</Descriptions.Item>
               <Descriptions.Item label="招聘负责人">{viewingRecord.hiring_manager_name || '-'}</Descriptions.Item>
-              <Descriptions.Item label="汇报对象">{viewingRecord.reports_to || '-'}</Descriptions.Item>
             </Descriptions>
 
             <Divider style={{ margin: '24px 0' }} />

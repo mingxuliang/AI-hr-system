@@ -173,12 +173,7 @@ const PositionForm: React.FC = () => {
               </Select>
             </Form.Item>
 
-            <Form.Item
-              name="reports_to"
-              label="汇报对象"
-            >
-              <Input placeholder="例如：技术总监" size="large" />
-            </Form.Item>
+      
           </div>
 
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
