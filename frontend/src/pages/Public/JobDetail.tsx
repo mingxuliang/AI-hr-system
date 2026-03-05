@@ -3,6 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Card, Typography, Tag, Descriptions, Button, Divider, Form, Input, Upload, message, Result, Spin } from 'antd';
 import { UploadOutlined, ArrowLeftOutlined } from '@ant-design/icons';
 import request from '../../utils/request';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 const { Title, Paragraph, Text } = Typography;
 
@@ -47,9 +49,6 @@ const PublicJobDetail: React.FC = () => {
       formData.append('contact', values.phone);
       formData.append('file', values.file.file);
 
-      // We use the same upload endpoint but we might need to adjust backend to allow public access
-      // For now, let's assume the endpoint is protected and this page is for demonstration
-      // In a real public page, we would need a public endpoint
       await request.post('/resumes', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
@@ -124,10 +123,11 @@ const PublicJobDetail: React.FC = () => {
               padding: '20px', 
               borderRadius: '8px', 
               color: '#334155',
-              lineHeight: 1.8,
-              whiteSpace: 'pre-wrap'
+              lineHeight: 1.8
             }}>
-              {position.description}
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {position.description || '暂无描述'}
+              </ReactMarkdown>
             </div>
           </div>
 
@@ -138,10 +138,11 @@ const PublicJobDetail: React.FC = () => {
               padding: '20px', 
               borderRadius: '8px', 
               color: '#334155',
-              lineHeight: 1.8,
-              whiteSpace: 'pre-wrap'
+              lineHeight: 1.8
             }}>
-              {position.requirements || '暂无详细要求'}
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {position.requirements || '暂无详细要求'}
+              </ReactMarkdown>
             </div>
           </div>
 

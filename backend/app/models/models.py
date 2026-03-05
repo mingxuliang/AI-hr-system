@@ -28,6 +28,18 @@ class PositionStatus(str, enum.Enum):
     CLOSED = "closed"
     PUBLISHED = "published"
 
+class PositionUrgency(str, enum.Enum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    URGENT = "urgent"
+
+class PositionType(str, enum.Enum):
+    FULL_TIME = "full_time"
+    PART_TIME = "part_time"
+    CONTRACT = "contract"
+    INTERNSHIP = "internship"
+
 class Position(Base):
     __tablename__ = "positions"
 
@@ -39,8 +51,15 @@ class Position(Base):
     location = Column(String)
     department = Column(String)
     status = Column(Enum(PositionStatus), default=PositionStatus.OPEN)
+    urgency = Column(Enum(PositionUrgency), default=PositionUrgency.MEDIUM)
+    position_type = Column(Enum(PositionType), default=PositionType.FULL_TIME)
+    headcount = Column(Integer, default=1)
+    reports_to = Column(String)
+    hiring_manager_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    hiring_manager = relationship("User", foreign_keys=[hiring_manager_id])
 
 class QuestionCategory(str, enum.Enum):
     TECHNICAL = "technical"

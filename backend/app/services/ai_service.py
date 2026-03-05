@@ -237,3 +237,143 @@ def generate_coding_test_evaluation(
     except Exception as e:
         print(f"Coding evaluation generation failed: {e}")
         return {"evaluation": "生成评价失败"}
+
+def generate_jd(
+    title: str,
+    department: str = "",
+    location: str = "",
+    salary_range: str = "",
+    keywords: str = ""
+) -> Dict[str, str]:
+    prompt_data = prompt_manager.get_prompt(
+        "generate_jd",
+        title=title,
+        department=department or "未指定",
+        location=location or "未指定",
+        salary_range=salary_range or "面议",
+        keywords=keywords or "无特殊要求"
+    )
+    
+    if not prompt_data.get("user"):
+        return {"description": "生成岗位描述失败", "requirements": "生成任职要求失败"}
+    
+    try:
+        cfg = _get_llm_config()
+        extra = {"temperature": cfg["llm_temperature"]}
+        if cfg["llm_max_tokens"] is not None:
+            extra["max_tokens"] = cfg["llm_max_tokens"]
+        completion = _get_client().chat.completions.create(
+            model=cfg["llm_model"],
+            messages=[
+                {'role': 'system', 'content': prompt_data['system']},
+                {'role': 'user', 'content': prompt_data['user']}
+            ],
+            response_format={"type": "json_object"},
+            **extra,
+        )
+        result = json.loads(completion.choices[0].message.content)
+        return {
+            "description": result.get("description", ""),
+            "requirements": result.get("requirements", "")
+        }
+    except Exception as e:
+        print(f"JD generation failed: {e}")
+        return {"description": "生成岗位描述失败", "requirements": "生成任职要求失败"}
+
+def generate_jd_stream(
+    title: str,
+    department: str = "",
+    location: str = "",
+    salary_range: str = "",
+    keywords: str = ""
+):
+    prompt_data = prompt_manager.get_prompt(
+        "generate_jd",
+        title=title,
+        department=department or "未指定",
+        location=location or "未指定",
+        salary_range=salary_range or "面议",
+        keywords=keywords or "无特殊要求"
+    )
+    
+    if not prompt_data.get("user"):
+        yield "data: " + json.dumps({"error": "生成失败，请检查配置"}, ensure_ascii=False) + "\n\n"
+        return
+    
+    try:
+        cfg = _get_llm_config()
+        extra = {"temperature": cfg["llm_temperature"], "stream": True}
+        if cfg["llm_max_tokens"] is not None:
+            extra["max_tokens"] = cfg["llm_max_tokens"]
+        
+        stream = _get_client().chat.completions.create(
+            model=cfg["llm_model"],
+            messages=[
+                {'role': 'system', 'content': prompt_data['system']},
+                {'role': 'user', 'content': prompt_data['user']}
+            ],
+            response_format={"type": "json_object"},
+            **extra,
+        )
+        
+        for chunk in stream:
+            if chunk.choices[0].delta.content:
+                yield "data: " + json.dumps({"content": chunk.choices[0].delta.content}, ensure_ascii=False) + "\n\n"
+        
+        yield "data: " + json.dumps({"done": True}, ensure_ascii=False) + "\n\n"
+    except Exception as e:
+        print(f"JD stream generation failed: {e}")
+        yield "data: " + json.dumps({"error": str(e)}, ensure_ascii=False) + "\n\n"
+
+def chat_jd_stream(
+    messages: list,
+    current_description: str = "",
+    current_requirements: str = ""
+):
+    system_prompt = """你是一个专业的招聘专家，擅长撰写和优化岗位描述（JD）。
+
+当前岗位描述内容：
+【岗位职责】
+""" + current_description + """
+
+【任职要求】
+""" + current_requirements + """
+
+你的任务是帮助用户优化和完善岗位描述。请根据用户的反馈进行修改，并返回完整的更新后的内容。
+
+返回格式必须是 JSON：
+{
+  "description": "更新后的岗位职责（Markdown格式）",
+  "requirements": "更新后的任职要求（Markdown格式）"
+}
+
+注意：
+1. 保持专业性和准确性
+2. 如果用户只是提问而不需要修改，请解释相关内容，但仍然返回当前的 description 和 requirements
+3. 修改时要保持整体结构完整，不要只返回部分内容"""
+
+    try:
+        cfg = _get_llm_config()
+        extra = {"temperature": cfg["llm_temperature"], "stream": True}
+        if cfg["llm_max_tokens"] is not None:
+            extra["max_tokens"] = cfg["llm_max_tokens"]
+        
+        formatted_messages = [{"role": "system", "content": system_prompt}]
+        for msg in messages:
+            formatted_messages.append({"role": msg["role"], "content": msg["content"]})
+        
+        stream = _get_client().chat.completions.create(
+            model=cfg["llm_model"],
+            messages=formatted_messages,
+            response_format={"type": "json_object"},
+            **extra,
+        )
+        
+        for chunk in stream:
+            if chunk.choices[0].delta.content:
+                yield "data: " + json.dumps({"content": chunk.choices[0].delta.content}, ensure_ascii=False) + "\n\n"
+        
+        yield "data: " + json.dumps({"done": True}, ensure_ascii=False) + "\n\n"
+    except Exception as e:
+        print(f"JD chat stream failed: {e}")
+        yield "data: " + json.dumps({"error": str(e)}, ensure_ascii=False) + "\n\n"

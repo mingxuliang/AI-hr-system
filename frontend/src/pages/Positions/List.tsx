@@ -1,19 +1,76 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Button, Space, message, Modal, Form, Input, Select, Tag, Tooltip, Typography, Drawer, Descriptions, Divider } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined, GlobalOutlined, StopOutlined, CopyOutlined } from '@ant-design/icons';
+import { Table, Button, Space, message, Modal, Form, Input, Select, Tag, Tooltip, Typography, Drawer, Descriptions, Divider, Progress, Badge, Spin } from 'antd';
+import { PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined, GlobalOutlined, StopOutlined, CopyOutlined, RobotOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import request from '../../utils/request';
+import JDGeneratorModal from '../../components/JDGeneratorModal';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 const { Title, Text } = Typography;
 
+interface PositionStats {
+  total_resumes: number;
+  pending_screening: number;
+  pending_interview: number;
+  interview_completed: number;
+  offer_pending: number;
+  offer_accepted: number;
+  rejected: number;
+}
+
+interface QuestionBankBrief {
+  id: string;
+  name: string;
+  category: string;
+  question_count: number;
+}
+
+interface Position {
+  id: string;
+  title: string;
+  description: string;
+  requirements: string | null;
+  salary_range: string | null;
+  location: string | null;
+  department: string | null;
+  status: string;
+  urgency: string;
+  position_type: string;
+  headcount: number;
+  reports_to: string | null;
+  hiring_manager_id: string | null;
+  hiring_manager_name: string | null;
+  created_at: string;
+  updated_at: string;
+  stats: PositionStats;
+  linked_question_banks?: QuestionBankBrief[];
+}
+
+const urgencyConfig: Record<string, { color: string; text: string }> = {
+  low: { color: 'default', text: '低' },
+  medium: { color: 'warning', text: '中' },
+  high: { color: 'orange', text: '高' },
+  urgent: { color: 'red', text: '紧急' },
+};
+
+const positionTypeConfig: Record<string, { color: string; text: string }> = {
+  full_time: { color: 'blue', text: '全职' },
+  part_time: { color: 'cyan', text: '兼职' },
+  contract: { color: 'purple', text: '合同' },
+  internship: { color: 'green', text: '实习' },
+};
+
 const PositionsList: React.FC = () => {
-  const [data, setData] = useState([]);
+  const [data, setData] = useState<Position[]>([]);
   const [loading, setLoading] = useState(false);
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [isDrawerVisible, setIsDrawerVisible] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [viewingRecord, setViewingRecord] = useState<any>(null);
+  const [viewingRecord, setViewingRecord] = useState<Position | null>(null);
   const [form] = Form.useForm();
   const [submitting, setSubmitting] = useState(false);
+  const [users, setUsers] = useState<any[]>([]);
+  const [jdModalVisible, setJdModalVisible] = useState(false);
 
   const [searchTitle, setSearchTitle] = useState<string>('');
   const [searchStatus, setSearchStatus] = useState<string | undefined>(undefined);
@@ -35,18 +92,28 @@ const PositionsList: React.FC = () => {
     }
   };
 
+  const fetchUsers = async () => {
+    try {
+      const res = await request.get('/auth/users');
+      setUsers(res);
+    } catch (error) {
+      console.error('Failed to fetch users');
+    }
+  };
+
   useEffect(() => {
     fetchPositions();
+    fetchUsers();
   }, [searchTitle, searchStatus]);
 
   const handleAdd = () => {
     setEditingId(null);
     form.resetFields();
-    form.setFieldsValue({ status: 'open' });
+    form.setFieldsValue({ status: 'open', urgency: 'medium', position_type: 'full_time', headcount: 1 });
     setIsModalVisible(true);
   };
 
-  const handleEdit = async (record: any) => {
+  const handleEdit = async (record: Position) => {
     setEditingId(record.id);
     try {
       const res = await request.get(`/positions/${record.id}`);
@@ -57,7 +124,7 @@ const PositionsList: React.FC = () => {
     }
   };
 
-  const handleView = async (record: any) => {
+  const handleView = async (record: Position) => {
     try {
       const res = await request.get(`/positions/${record.id}`);
       setViewingRecord(res);
@@ -103,6 +170,26 @@ const PositionsList: React.FC = () => {
     });
   };
 
+  const handleOpenJDModal = async () => {
+    try {
+      const values = await form.validateFields(['title']);
+      if (!values.title) {
+        message.error('请先填写岗位名称');
+        return;
+      }
+      setJdModalVisible(true);
+    } catch {
+      message.error('请先填写岗位名称');
+    }
+  };
+
+  const handleJDConfirm = (description: string, requirements: string) => {
+    form.setFieldsValue({
+      description,
+      requirements
+    });
+  };
+
   const handleOk = async () => {
     try {
       const values = await form.validateFields();
@@ -123,6 +210,36 @@ const PositionsList: React.FC = () => {
     }
   };
 
+  const renderStats = (stats: PositionStats | undefined) => {
+    if (!stats) return <Text type="secondary">-</Text>;
+    const total = stats.total_resumes || 0;
+    if (total === 0) return <Text type="secondary">暂无简历</Text>;
+    
+    return (
+      <Tooltip title={
+        <div>
+          <div>待筛选: {stats.pending_screening}</div>
+          <div>待面试: {stats.pending_interview}</div>
+          <div>面试完成: {stats.interview_completed}</div>
+          <div>Offer待定: {stats.offer_pending}</div>
+          <div>已入职: {stats.offer_accepted}</div>
+          <div>已淘汰: {stats.rejected}</div>
+        </div>
+      }>
+        <Space size={4}>
+          <Badge count={total} style={{ backgroundColor: '#3B82F6' }} />
+          <Progress 
+            percent={Math.round((stats.offer_accepted / total) * 100) || 0} 
+            size="small" 
+            style={{ width: 60 }}
+            showInfo={false}
+            strokeColor="#10B981"
+          />
+        </Space>
+      </Tooltip>
+    );
+  };
+
   const columns = [
     { 
       title: '岗位名称', 
@@ -130,7 +247,25 @@ const PositionsList: React.FC = () => {
       key: 'title',
       render: (text: string) => <span style={{ fontWeight: 500, color: '#0F172A' }}>{text}</span>
     },
-    { title: '部门', dataIndex: 'department', key: 'department' },
+    { title: '部门', dataIndex: 'department', key: 'department', render: (v: string) => v || '-' },
+    { 
+      title: '类型', 
+      dataIndex: 'position_type', 
+      key: 'position_type',
+      render: (type: string) => {
+        const config = positionTypeConfig[type] || { color: 'default', text: type };
+        return <Tag color={config.color} style={{ border: 'none' }}>{config.text}</Tag>;
+      }
+    },
+    { 
+      title: '紧急度', 
+      dataIndex: 'urgency', 
+      key: 'urgency',
+      render: (urgency: string) => {
+        const config = urgencyConfig[urgency] || { color: 'default', text: urgency };
+        return <Tag color={config.color} style={{ border: 'none' }}>{config.text}</Tag>;
+      }
+    },
     { 
       title: '状态', 
       dataIndex: 'status', 
@@ -149,6 +284,11 @@ const PositionsList: React.FC = () => {
       }
     },
     { 
+      title: '招聘进度', 
+      key: 'stats',
+      render: (_: any, record: Position) => renderStats(record.stats)
+    },
+    { 
       title: '创建时间', 
       dataIndex: 'created_at', 
       key: 'created_at',
@@ -157,7 +297,7 @@ const PositionsList: React.FC = () => {
     {
       title: '操作',
       key: 'action',
-      render: (_, record: any) => (
+      render: (_: any, record: Position) => (
         <Space size="small">
           <Tooltip title="查看详情">
             <Button type="text" icon={<EyeOutlined style={{ color: '#3B82F6' }} />} onClick={() => handleView(record)} />
@@ -231,7 +371,7 @@ const PositionsList: React.FC = () => {
         onOk={handleOk}
         onCancel={() => setIsModalVisible(false)}
         confirmLoading={submitting}
-        width={700}
+        width={800}
         centered
         destroyOnClose
         okText="保存"
@@ -275,33 +415,105 @@ const PositionsList: React.FC = () => {
             </Form.Item>
 
             <Form.Item
-              name="status"
-              label="状态"
+              name="headcount"
+              label="招聘人数"
+            >
+              <Input type="number" min={1} placeholder="1" size="large" />
+            </Form.Item>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+            <Form.Item
+              name="position_type"
+              label="岗位类型"
             >
               <Select size="large">
-                <Select.Option value="open">待发布</Select.Option>
-                <Select.Option value="published">招聘中</Select.Option>
-                <Select.Option value="closed">已关闭</Select.Option>
+                <Select.Option value="full_time">全职</Select.Option>
+                <Select.Option value="part_time">兼职</Select.Option>
+                <Select.Option value="contract">合同</Select.Option>
+                <Select.Option value="internship">实习</Select.Option>
+              </Select>
+            </Form.Item>
+
+            <Form.Item
+              name="urgency"
+              label="紧急程度"
+            >
+              <Select size="large">
+                <Select.Option value="low">低</Select.Option>
+                <Select.Option value="medium">中</Select.Option>
+                <Select.Option value="high">高</Select.Option>
+                <Select.Option value="urgent">紧急</Select.Option>
               </Select>
             </Form.Item>
           </div>
 
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+            <Form.Item
+              name="hiring_manager_id"
+              label="招聘负责人"
+            >
+              <Select size="large" allowClear placeholder="选择招聘负责人" showSearch optionFilterProp="children">
+                {users.map(user => (
+                  <Select.Option key={user.id} value={user.id}>{user.full_name} ({user.email})</Select.Option>
+                ))}
+              </Select>
+            </Form.Item>
+
+            <Form.Item
+              name="reports_to"
+              label="汇报对象"
+            >
+              <Input placeholder="例如：技术总监" size="large" />
+            </Form.Item>
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <Text strong>岗位职责</Text>
+            <Button 
+              type="link" 
+              icon={<RobotOutlined />} 
+              onClick={handleOpenJDModal}
+            >
+              AI 生成 JD
+            </Button>
+          </div>
           <Form.Item
             name="description"
-            label="岗位职责"
             rules={[{ required: true, message: '请输入岗位职责' }]}
           >
-            <Input.TextArea rows={4} placeholder="请输入详细的岗位职责描述" showCount maxLength={1000} style={{ padding: '8px 12px' }} />
+            <Input.TextArea rows={4} placeholder="请输入详细的岗位职责描述" showCount maxLength={2000} style={{ padding: '8px 12px' }} />
           </Form.Item>
 
           <Form.Item
             name="requirements"
             label="任职要求"
           >
-            <Input.TextArea rows={4} placeholder="请输入任职资格要求" showCount maxLength={1000} style={{ padding: '8px 12px' }} />
+            <Input.TextArea rows={4} placeholder="请输入任职资格要求" showCount maxLength={2000} style={{ padding: '8px 12px' }} />
+          </Form.Item>
+
+          <Form.Item
+            name="status"
+            label="状态"
+          >
+            <Select size="large">
+              <Select.Option value="open">待发布</Select.Option>
+              <Select.Option value="published">招聘中</Select.Option>
+              <Select.Option value="closed">已关闭</Select.Option>
+            </Select>
           </Form.Item>
         </Form>
       </Modal>
+
+      <JDGeneratorModal
+        visible={jdModalVisible}
+        onCancel={() => setJdModalVisible(false)}
+        onConfirm={handleJDConfirm}
+        title={form.getFieldValue('title') || ''}
+        department={form.getFieldValue('department')}
+        location={form.getFieldValue('location')}
+        salary_range={form.getFieldValue('salary_range')}
+      />
 
       <Drawer
         title="岗位详情"
@@ -312,7 +524,7 @@ const PositionsList: React.FC = () => {
           <Space>
             <Button onClick={() => {
               setIsDrawerVisible(false);
-              handleEdit(viewingRecord);
+              if (viewingRecord) handleEdit(viewingRecord);
             }}>编辑</Button>
             <Button type="primary" onClick={() => setIsDrawerVisible(false)}>关闭</Button>
           </Space>
@@ -322,9 +534,15 @@ const PositionsList: React.FC = () => {
           <div>
             <div style={{ marginBottom: 24 }}>
               <Title level={3} style={{ margin: 0 }}>{viewingRecord.title}</Title>
-              <div style={{ marginTop: 8 }}>
-                <Tag color={viewingRecord.status === 'open' ? 'success' : 'default'} style={{ border: 'none' }}>
-                  {viewingRecord.status === 'open' ? '招聘中' : '已关闭'}
+              <div style={{ marginTop: 8, display: 'flex', gap: 8, alignItems: 'center' }}>
+                <Tag color={viewingRecord.status === 'published' ? 'processing' : 'default'} style={{ border: 'none' }}>
+                  {viewingRecord.status === 'published' ? '招聘中' : viewingRecord.status === 'open' ? '待发布' : '已关闭'}
+                </Tag>
+                <Tag color={urgencyConfig[viewingRecord.urgency]?.color || 'default'} style={{ border: 'none' }}>
+                  {urgencyConfig[viewingRecord.urgency]?.text || viewingRecord.urgency}
+                </Tag>
+                <Tag color={positionTypeConfig[viewingRecord.position_type]?.color || 'default'} style={{ border: 'none' }}>
+                  {positionTypeConfig[viewingRecord.position_type]?.text || viewingRecord.position_type}
                 </Tag>
                 <Text type="secondary" style={{ marginLeft: 8 }}>
                   创建于 {new Date(viewingRecord.created_at).toLocaleDateString()}
@@ -336,7 +554,34 @@ const PositionsList: React.FC = () => {
               <Descriptions.Item label="所属部门">{viewingRecord.department || '-'}</Descriptions.Item>
               <Descriptions.Item label="工作地点">{viewingRecord.location || '-'}</Descriptions.Item>
               <Descriptions.Item label="薪资范围">{viewingRecord.salary_range || '-'}</Descriptions.Item>
+              <Descriptions.Item label="招聘人数">{viewingRecord.headcount || 1} 人</Descriptions.Item>
+              <Descriptions.Item label="招聘负责人">{viewingRecord.hiring_manager_name || '-'}</Descriptions.Item>
+              <Descriptions.Item label="汇报对象">{viewingRecord.reports_to || '-'}</Descriptions.Item>
             </Descriptions>
+
+            <Divider style={{ margin: '24px 0' }} />
+
+            <div style={{ marginBottom: 24 }}>
+              <Title level={5} style={{ marginBottom: 12 }}>招聘进度</Title>
+              <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                <div style={{ background: '#F8FAFC', padding: '12px 16px', borderRadius: 8 }}>
+                  <Text type="secondary">总简历</Text>
+                  <div style={{ fontSize: 24, fontWeight: 600, color: '#3B82F6' }}>{viewingRecord.stats?.total_resumes || 0}</div>
+                </div>
+                <div style={{ background: '#F8FAFC', padding: '12px 16px', borderRadius: 8 }}>
+                  <Text type="secondary">待筛选</Text>
+                  <div style={{ fontSize: 24, fontWeight: 600, color: '#F59E0B' }}>{viewingRecord.stats?.pending_screening || 0}</div>
+                </div>
+                <div style={{ background: '#F8FAFC', padding: '12px 16px', borderRadius: 8 }}>
+                  <Text type="secondary">待面试</Text>
+                  <div style={{ fontSize: 24, fontWeight: 600, color: '#8B5CF6' }}>{viewingRecord.stats?.pending_interview || 0}</div>
+                </div>
+                <div style={{ background: '#F8FAFC', padding: '12px 16px', borderRadius: 8 }}>
+                  <Text type="secondary">已入职</Text>
+                  <div style={{ fontSize: 24, fontWeight: 600, color: '#10B981' }}>{viewingRecord.stats?.offer_accepted || 0}</div>
+                </div>
+              </div>
+            </div>
 
             <Divider style={{ margin: '24px 0' }} />
 
@@ -347,10 +592,11 @@ const PositionsList: React.FC = () => {
                 padding: '16px', 
                 borderRadius: '8px', 
                 color: '#334155',
-                lineHeight: 1.8,
-                whiteSpace: 'pre-wrap'
+                lineHeight: 1.8
               }}>
-                {viewingRecord.description}
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  {viewingRecord.description || '暂无描述'}
+                </ReactMarkdown>
               </div>
             </div>
 
@@ -361,11 +607,50 @@ const PositionsList: React.FC = () => {
                 padding: '16px', 
                 borderRadius: '8px', 
                 color: '#334155',
-                lineHeight: 1.8,
-                whiteSpace: 'pre-wrap'
+                lineHeight: 1.8
               }}>
-                {viewingRecord.requirements || '暂无要求'}
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  {viewingRecord.requirements || '暂无要求'}
+                </ReactMarkdown>
               </div>
+            </div>
+
+            <Divider style={{ margin: '24px 0' }} />
+
+            <div style={{ marginBottom: 24 }}>
+              <Title level={5} style={{ marginBottom: 12 }}>关联题库</Title>
+              {viewingRecord.linked_question_banks && viewingRecord.linked_question_banks.length > 0 ? (
+                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                  {viewingRecord.linked_question_banks.map((bank: QuestionBankBrief) => (
+                    <div 
+                      key={bank.id}
+                      style={{ 
+                        background: '#F8FAFC', 
+                        padding: '12px 16px', 
+                        borderRadius: 8,
+                        border: '1px solid #E2E8F0',
+                        minWidth: 200
+                      }}
+                    >
+                      <div style={{ fontWeight: 500, color: '#0F172A' }}>{bank.name}</div>
+                      <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                        <Tag color="blue" style={{ border: 'none', margin: 0 }}>{bank.category}</Tag>
+                        <Text type="secondary" style={{ fontSize: 12 }}>{bank.question_count} 道题</Text>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ 
+                  background: '#F8FAFC', 
+                  padding: '16px', 
+                  borderRadius: '8px', 
+                  color: '#64748B',
+                  textAlign: 'center'
+                }}>
+                  暂无关联题库，可在题库管理中关联到此岗位
+                </div>
+              )}
             </div>
           </div>
         )}
