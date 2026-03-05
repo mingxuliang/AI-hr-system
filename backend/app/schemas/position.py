@@ -15,7 +15,6 @@ class PositionBase(BaseModel):
     urgency: PositionUrgency = PositionUrgency.MEDIUM
     position_type: PositionType = PositionType.FULL_TIME
     headcount: int = 1
-    reports_to: Optional[str] = None
     hiring_manager_id: Optional[UUID] = None
 
 class PositionCreate(PositionBase):
@@ -32,7 +31,6 @@ class PositionUpdate(BaseModel):
     urgency: Optional[PositionUrgency] = None
     position_type: Optional[PositionType] = None
     headcount: Optional[int] = None
-    reports_to: Optional[str] = None
     hiring_manager_id: Optional[UUID] = None
 
 class PositionResponse(PositionBase):

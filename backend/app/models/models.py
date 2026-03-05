@@ -54,7 +54,6 @@ class Position(Base):
     urgency = Column(Enum(PositionUrgency), default=PositionUrgency.MEDIUM)
     position_type = Column(Enum(PositionType), default=PositionType.FULL_TIME)
     headcount = Column(Integer, default=1)
-    reports_to = Column(String)
     hiring_manager_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
