@@ -182,6 +182,7 @@ class InterviewResult(str, enum.Enum):
 
 class InterviewStatus(str, enum.Enum):
     SCHEDULED = "scheduled"
+    IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
     CANCELLED = "cancelled"
 
@@ -296,4 +297,12 @@ class SystemConfig(Base):
     llm_model = Column(String, default="qwen3.5-plus")
     llm_temperature = Column(Float, default=0.2)
     llm_max_tokens = Column(Integer)
+    # 邮件服务配置
+    smtp_host = Column(String)
+    smtp_port = Column(Integer, default=465)
+    smtp_username = Column(String)
+    smtp_password = Column(String)
+    mail_from = Column(String)  # 发件人邮箱
+    mail_from_name = Column(String, default="招聘系统")  # 发件人名称
+    mail_enabled = Column(Boolean, default=False)  # 是否启用邮件通知
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

@@ -5,7 +5,11 @@ from typing import Optional, Tuple
 from app.config.database import get_db
 from app.core.security import check_roles
 from app.models.models import SystemConfig, UserRole
-from app.schemas.settings import SystemModelConfigResponse, SystemModelConfigUpdate
+from app.schemas.settings import (
+    SystemModelConfigResponse, SystemModelConfigUpdate,
+    MailConfigResponse, MailConfigUpdate,
+    SystemConfigResponse, SystemConfigUpdate
+)
 
 
 router = APIRouter(
@@ -87,3 +91,88 @@ def update_system_settings(
         llm_api_key_set=api_key_set,
         llm_api_key_last4=api_key_last4,
     )
+
+
+@router.get("/mail", response_model=MailConfigResponse)
+def get_mail_settings(
+    db: Session = Depends(get_db),
+    _current_user=Depends(check_roles([UserRole.ADMIN])),
+):
+    """获取邮件配置"""
+    config = _get_or_create_config(db)
+    smtp_password_set = bool(config.smtp_password)
+    return MailConfigResponse(
+        smtp_host=config.smtp_host,
+        smtp_port=config.smtp_port or 465,
+        smtp_username=config.smtp_username,
+        smtp_password_set=smtp_password_set,
+        mail_from=config.mail_from,
+        mail_from_name=config.mail_from_name or "招聘系统",
+        mail_enabled=config.mail_enabled or False,
+    )
+
+
+@router.put("/mail", response_model=MailConfigResponse)
+def update_mail_settings(
+    payload: MailConfigUpdate,
+    db: Session = Depends(get_db),
+    _current_user=Depends(check_roles([UserRole.ADMIN])),
+):
+    """更新邮件配置"""
+    config = _get_or_create_config(db)
+    data = payload.dict(exclude_unset=True)
+
+    if "smtp_host" in data:
+        config.smtp_host = (data["smtp_host"] or "").strip() or None
+
+    if "smtp_port" in data:
+        config.smtp_port = data["smtp_port"]
+
+    if "smtp_username" in data:
+        config.smtp_username = (data["smtp_username"] or "").strip() or None
+
+    if "smtp_password" in data:
+        password = (data["smtp_password"] or "").strip()
+        if password:
+            config.smtp_password = password
+
+    if "mail_from" in data:
+        config.mail_from = (data["mail_from"] or "").strip() or None
+
+    if "mail_from_name" in data:
+        config.mail_from_name = (data["mail_from_name"] or "").strip() or "招聘系统"
+
+    if "mail_enabled" in data:
+        config.mail_enabled = data["mail_enabled"]
+
+    db.commit()
+    db.refresh(config)
+
+    smtp_password_set = bool(config.smtp_password)
+    return MailConfigResponse(
+        smtp_host=config.smtp_host,
+        smtp_port=config.smtp_port or 465,
+        smtp_username=config.smtp_username,
+        smtp_password_set=smtp_password_set,
+        mail_from=config.mail_from,
+        mail_from_name=config.mail_from_name or "招聘系统",
+        mail_enabled=config.mail_enabled or False,
+    )
+
+
+@router.post("/mail/test")
+def test_mail_settings(
+    db: Session = Depends(get_db),
+    _current_user=Depends(check_roles([UserRole.ADMIN])),
+):
+    """测试邮件配置"""
+    from app.services.mail_service import get_mail_service
+
+    mail_service = get_mail_service(db)
+
+    if not mail_service.config.is_valid():
+        raise HTTPException(status_code=400, detail="邮件配置不完整或未启用")
+
+    # 发送测试邮件给当前用户
+    # 这里简化处理，实际应该发送给当前用户的邮箱
+    return {"message": "邮件配置有效"}

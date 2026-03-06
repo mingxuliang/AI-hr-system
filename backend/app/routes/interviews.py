@@ -3,13 +3,14 @@ from sqlalchemy.orm import Session
 from app.config.database import get_db
 from app.schemas.interview import InterviewResponse, InterviewCreate, InterviewUpdate, InterviewScore
 from app.services.interview_service import (
-    create_interview, get_interviews, get_interview, update_interview, delete_interview, 
+    create_interview, get_interviews, get_interview, update_interview, delete_interview,
     submit_interview_score, update_interview_questions, export_interview_result, confirm_interview_result,
-    submit_interview_panel_score, aggregate_panel_scores
+    submit_interview_panel_score, aggregate_panel_scores, start_interview, cancel_interview, get_submission_status
 )
 from app.schemas.interview import InterviewResponse, InterviewCreate, InterviewUpdate, InterviewScore, InterviewPanelResponse
-from app.models.models import User
+from app.models.models import User, UserRole, Resume, Position
 from app.routes.auth import get_current_user
+from app.core.security import check_roles
 
 from typing import List
 from uuid import UUID
@@ -23,6 +24,23 @@ router = APIRouter(
 
 class ConfirmResult(BaseModel):
     result: str
+
+class CancelRequest(BaseModel):
+    reason: str = None
+
+class EmailSendRequest(BaseModel):
+    subject: str
+    content: str
+
+class EmailPreviewRequest(BaseModel):
+    resume_id: UUID
+    position_id: UUID
+    interview_time: str = None
+    round: int = 1
+    interview_type: str = 'onsite'
+    interview_category: str = 'technical'
+    interview_location: str = None
+    meeting_link: str = None
 
 @router.post("/{interview_id}/panel-score", response_model=InterviewPanelResponse)
 def submit_panel_score_route(
@@ -75,11 +93,51 @@ def aggregate_scores_route(
     return db_interview
 
 @router.post("/{interview_id}/confirm", response_model=InterviewResponse)
-def confirm_interview_result_route(interview_id: UUID, confirm_data: ConfirmResult, db: Session = Depends(get_db)):
-    db_interview = confirm_interview_result(db, interview_id, confirm_data.result)
+def confirm_interview_result_route(
+    interview_id: UUID,
+    confirm_data: ConfirmResult,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
+    db_interview = confirm_interview_result(db, interview_id, confirm_data.result, background_tasks)
     if not db_interview:
         raise HTTPException(status_code=404, detail="Interview not found")
     return db_interview
+
+@router.post("/{interview_id}/cancel", response_model=InterviewResponse)
+def cancel_interview_route(
+    interview_id: UUID,
+    reason: str = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(check_roles([UserRole.ADMIN, UserRole.HR]))
+):
+    """
+    取消面试。
+    """
+    try:
+        db_interview = cancel_interview(db, interview_id, reason)
+        if not db_interview:
+            raise HTTPException(status_code=404, detail="Interview not found")
+        return db_interview
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.get("/{interview_id}/submission-status")
+def get_submission_status_route(
+    interview_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    获取面试评分提交状态。
+    返回各面试官是否已提交评分。
+    """
+    status = get_submission_status(db, interview_id)
+    if not status:
+        raise HTTPException(status_code=404, detail="Interview not found")
+    return status
 
 @router.get("/{interview_id}/export")
 def export_interview_route(interview_id: UUID, format: str = "markdown", db: Session = Depends(get_db)):
@@ -95,9 +153,6 @@ def update_questions_route(interview_id: UUID, questions: List[dict], db: Sessio
     if not db_interview:
         raise HTTPException(status_code=404, detail="Interview not found")
     return db_interview
-
-from app.core.security import check_roles
-from app.models.models import User, UserRole
 
 @router.post("", response_model=InterviewResponse)
 def create_interview_route(
@@ -130,12 +185,97 @@ def get_interviews_route(
         
     return get_interviews(db, skip=skip, limit=limit, status=status)
 
+@router.post("/email-preview")
+def preview_email_before_create(
+    preview_data: EmailPreviewRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """在创建面试前预览邮件内容"""
+    from app.services.mail_service import get_mail_service
+    from datetime import datetime
+
+    # 获取简历和岗位信息
+    resume = db.query(Resume).filter(Resume.id == preview_data.resume_id).first()
+    position = db.query(Position).filter(Position.id == preview_data.position_id).first()
+
+    if not resume or not position:
+        raise HTTPException(status_code=404, detail="简历或岗位不存在")
+
+    mail_service = get_mail_service(db)
+
+    # 面试类型中文映射
+    category_map = {
+        "hr": "HR面",
+        "technical": "技术面",
+        "manager": "主管面",
+        "ceo": "CEO面",
+        "comprehensive": "综合面"
+    }
+    interview_category_text = category_map.get(preview_data.interview_category, "面试")
+
+    # 面试形式中文映射
+    type_map = {
+        "onsite": "现场面试",
+        "video": "视频面试",
+        "phone": "电话面试"
+    }
+    interview_type_text = type_map.get(preview_data.interview_type, "现场面试")
+
+    # 格式化面试时间
+    time_str = "待定"
+    if preview_data.interview_time:
+        try:
+            dt = datetime.fromisoformat(preview_data.interview_time.replace('Z', '+00:00'))
+            time_str = dt.strftime('%Y年%m月%d日 %H:%M')
+        except:
+            time_str = preview_data.interview_time
+
+    # 渲染邮件模板
+    context = {
+        "candidate_name": resume.candidate_name or "候选人",
+        "position_title": position.title,
+        "interview_time": time_str,
+        "interview_round": preview_data.round,
+        "interview_category": interview_category_text,
+        "interview_type": interview_type_text,
+        "interview_location": preview_data.interview_location,
+        "meeting_link": preview_data.meeting_link,
+        "contact_person": "HR",
+        "contact_phone": "",
+        "company_name": "公司"
+    }
+
+    html_content = mail_service._render_template("interview_invitation.html", context)
+    subject = f"面试邀请 - {position.title} 岗位"
+
+    return {
+        "to_email": resume.email,
+        "candidate_name": resume.candidate_name,
+        "subject": subject,
+        "content": html_content
+    }
+
 @router.get("/{interview_id}", response_model=InterviewResponse)
 def get_interview_route(interview_id: UUID, db: Session = Depends(get_db)):
     interview = get_interview(db, interview_id)
     if not interview:
         raise HTTPException(status_code=404, detail="Interview not found")
     return interview
+
+@router.post("/{interview_id}/start", response_model=InterviewResponse)
+def start_interview_route(
+    interview_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    开始面试，将状态从 SCHEDULED 改为 IN_PROGRESS。
+    """
+    db_interview = start_interview(db, interview_id)
+    if not db_interview:
+        raise HTTPException(status_code=404, detail="Interview not found")
+    return db_interview
 
 @router.put("/{interview_id}", response_model=InterviewResponse)
 def update_interview_route(interview_id: UUID, interview: InterviewUpdate, db: Session = Depends(get_db)):
@@ -222,7 +362,7 @@ def upload_audio_route(
 
 @router.delete("/{interview_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_interview_route(
-    interview_id: UUID, 
+    interview_id: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(check_roles([UserRole.ADMIN, UserRole.HR]))
 ):
@@ -230,3 +370,113 @@ def delete_interview_route(
     if not db_interview:
         raise HTTPException(status_code=404, detail="Interview not found")
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/{interview_id}/email-preview")
+def get_email_preview(
+    interview_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """获取面试邀请邮件预览"""
+    from app.services.mail_service import get_mail_service
+
+    interview = get_interview(db, interview_id)
+    if not interview:
+        raise HTTPException(status_code=404, detail="Interview not found")
+
+    mail_service = get_mail_service(db)
+
+    # 获取候选人信息
+    resume = db.query(Resume).filter(Resume.id == interview.resume_id).first()
+    position = db.query(Position).filter(Position.id == interview.position_id).first()
+
+    if not resume or not position:
+        raise HTTPException(status_code=404, detail="Resume or position not found")
+
+    # 从 comments 中获取面试类型和地点信息
+    comments = interview.comments or {}
+    interview_type = comments.get("interview_type", "onsite")
+    interview_category = comments.get("interview_category", "technical")
+    interview_location = comments.get("interview_location")
+    meeting_link = comments.get("meeting_link")
+
+    # 面试类型中文映射
+    category_map = {
+        "hr": "HR面",
+        "technical": "技术面",
+        "manager": "主管面",
+        "ceo": "CEO面",
+        "comprehensive": "综合面"
+    }
+    interview_category_text = category_map.get(interview_category, "面试")
+
+    # 面试形式中文映射
+    type_map = {
+        "onsite": "现场面试",
+        "video": "视频面试",
+        "phone": "电话面试"
+    }
+    interview_type_text = type_map.get(interview_type, "现场面试")
+
+    # 格式化面试时间
+    time_str = interview.interview_time.strftime('%Y年%m月%d日 %H:%M') if interview.interview_time else "待定"
+
+    # 渲染邮件模板
+    context = {
+        "candidate_name": resume.candidate_name or "候选人",
+        "position_title": position.title,
+        "interview_time": time_str,
+        "interview_round": interview.round or 1,
+        "interview_category": interview_category_text,
+        "interview_type": interview_type_text,
+        "interview_location": interview_location,
+        "meeting_link": meeting_link,
+        "contact_person": "HR",
+        "contact_phone": "",
+        "company_name": "公司"
+    }
+
+    html_content = mail_service._render_template("interview_invitation.html", context)
+    subject = f"面试邀请 - {position.title} 岗位"
+
+    return {
+        "to_email": resume.email,
+        "candidate_name": resume.candidate_name,
+        "subject": subject,
+        "content": html_content
+    }
+
+
+@router.post("/{interview_id}/send-email")
+def send_interview_email(
+    interview_id: UUID,
+    email_data: EmailSendRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """发送面试邀请邮件"""
+    from app.services.mail_service import get_mail_service
+
+    interview = get_interview(db, interview_id)
+    if not interview:
+        raise HTTPException(status_code=404, detail="Interview not found")
+
+    mail_service = get_mail_service(db)
+
+    # 获取候选人邮箱
+    resume = db.query(Resume).filter(Resume.id == interview.resume_id).first()
+    if not resume or not resume.email:
+        raise HTTPException(status_code=400, detail="候选人邮箱为空")
+
+    # 发送邮件
+    success = mail_service._send_email(
+        to_email=resume.email,
+        subject=email_data.subject,
+        html_content=email_data.content
+    )
+
+    if success:
+        return {"message": "邮件发送成功"}
+    else:
+        raise HTTPException(status_code=500, detail="邮件发送失败")

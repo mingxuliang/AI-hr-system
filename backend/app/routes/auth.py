@@ -124,3 +124,109 @@ def get_interviewers(db: Session = Depends(get_db)):
     # Helper to get all interviewers (HR and Interviewer roles can be assigned)
     # Accessible by authenticated users to assign to interviews
     return db.query(User).filter(User.role.in_([UserRole.HR, UserRole.INTERVIEWER, UserRole.ADMIN])).all()
+
+@router.put("/users/{user_id}", response_model=UserResponse)
+def update_user(
+    user_id: str,
+    user_update: UserUpdateMe,
+    db: Session = Depends(get_db),
+    current_user: UserResponse = Depends(check_roles([UserRole.ADMIN]))
+):
+    """更新用户信息"""
+    from uuid import UUID
+    try:
+        uuid = UUID(user_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="无效的用户ID")
+
+    db_user = db.query(User).filter(User.id == uuid).first()
+    if not db_user:
+        raise HTTPException(status_code=404, detail="用户不存在")
+
+    data = user_update.dict(exclude_unset=True)
+    if "full_name" in data:
+        db_user.full_name = data["full_name"]
+
+    db.add(db_user)
+    db.commit()
+    db.refresh(db_user)
+    return db_user
+
+@router.put("/users/{user_id}/role")
+def update_user_role(
+    user_id: str,
+    role: str,
+    db: Session = Depends(get_db),
+    current_user: UserResponse = Depends(check_roles([UserRole.ADMIN]))
+):
+    """更新用户角色"""
+    from uuid import UUID
+    try:
+        uuid = UUID(user_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="无效的用户ID")
+
+    try:
+        new_role = UserRole(role)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="无效的角色")
+
+    db_user = db.query(User).filter(User.id == uuid).first()
+    if not db_user:
+        raise HTTPException(status_code=404, detail="用户不存在")
+
+    db_user.role = new_role
+    db.add(db_user)
+    db.commit()
+    return {"success": True, "message": "角色更新成功"}
+
+@router.put("/users/{user_id}/status")
+def toggle_user_status(
+    user_id: str,
+    db: Session = Depends(get_db),
+    current_user: UserResponse = Depends(check_roles([UserRole.ADMIN]))
+):
+    """切换用户状态（启用/禁用）"""
+    from uuid import UUID
+    try:
+        uuid = UUID(user_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="无效的用户ID")
+
+    db_user = db.query(User).filter(User.id == uuid).first()
+    if not db_user:
+        raise HTTPException(status_code=404, detail="用户不存在")
+
+    # 防止禁用自己
+    if db_user.id == current_user.id:
+        raise HTTPException(status_code=400, detail="不能禁用自己的账户")
+
+    db_user.is_active = not db_user.is_active
+    db.add(db_user)
+    db.commit()
+    return {"success": True, "is_active": db_user.is_active}
+
+@router.delete("/users/{user_id}")
+def delete_user(
+    user_id: str,
+    db: Session = Depends(get_db),
+    current_user: UserResponse = Depends(check_roles([UserRole.ADMIN]))
+):
+    """删除用户"""
+    from uuid import UUID
+    try:
+        uuid = UUID(user_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="无效的用户ID")
+
+    db_user = db.query(User).filter(User.id == uuid).first()
+    if not db_user:
+        raise HTTPException(status_code=404, detail="用户不存在")
+
+    # 防止删除自己
+    if db_user.id == current_user.id:
+        raise HTTPException(status_code=400, detail="不能删除自己的账户")
+
+    db.delete(db_user)
+    db.commit()
+    return {"success": True, "message": "用户已删除"}

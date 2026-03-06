@@ -1,15 +1,26 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Button, Space, message, Tag, Modal, Tooltip, Select } from 'antd';
-import { PlusOutlined, DeleteOutlined, PlayCircleOutlined, EyeOutlined } from '@ant-design/icons';
+import { Table, Button, Space, message, Tag, Modal, Tooltip, Select, Input, Popconfirm } from 'antd';
+import { PlusOutlined, DeleteOutlined, PlayCircleOutlined, EyeOutlined, StopOutlined } from '@ant-design/icons';
 import request from '../../utils/request';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../contexts/AuthContext';
 
 const InterviewsList: React.FC = () => {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined);
   const [interviewerNameMap, setInterviewerNameMap] = useState<Record<string, string>>({});
+  const [cancelModalVisible, setCancelModalVisible] = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
+  const [selectedInterviewId, setSelectedInterviewId] = useState<string | null>(null);
+  const [cancelling, setCancelling] = useState(false);
   const navigate = useNavigate();
+  const { user } = useAuth();
+
+  // 判断是否可以取消面试（仅 HR/Admin 可见）
+  const canCancelInterview = user?.role === 'admin' || user?.role === 'hr';
+  // 判断是否可以删除面试（仅 HR/Admin 可见）
+  const canDeleteInterview = user?.role === 'admin' || user?.role === 'hr';
 
   const fetchInterviews = async () => {
     setLoading(true);
@@ -69,18 +80,58 @@ const InterviewsList: React.FC = () => {
     });
   };
 
+  const handleOpenCancelModal = (id: string) => {
+    setSelectedInterviewId(id);
+    setCancelReason('');
+    setCancelModalVisible(true);
+  };
+
+  const handleCancelInterview = async () => {
+    if (!selectedInterviewId) return;
+
+    if (!cancelReason.trim()) {
+      message.error('请输入取消原因');
+      return;
+    }
+
+    setCancelling(true);
+    try {
+      await request.post(`/interviews/${selectedInterviewId}/cancel?reason=${encodeURIComponent(cancelReason)}`);
+      message.success('面试已取消');
+      setCancelModalVisible(false);
+      setCancelReason('');
+      setSelectedInterviewId(null);
+      fetchInterviews();
+    } catch (error) {
+      message.error('取消面试失败');
+    } finally {
+      setCancelling(false);
+    }
+  };
+
   const columns = [
-    { 
-      title: '候选人', 
-      dataIndex: ['resume', 'candidate_name'], 
+    {
+      title: '候选人',
+      dataIndex: ['resume', 'candidate_name'],
       key: 'candidate_name',
       render: (text: string) => <span style={{ fontWeight: 500, color: '#0F172A' }}>{text || '未知'}</span>
     },
-    { 
-      title: '岗位', 
-      dataIndex: ['position', 'title'], 
+    {
+      title: '岗位',
+      dataIndex: ['position', 'title'],
       key: 'position',
       render: (text: string) => <span style={{ color: '#64748B' }}>{text || '未知'}</span>
+    },
+    {
+      title: '轮次',
+      dataIndex: 'round',
+      key: 'round',
+      width: 80,
+      render: (round: number) => (
+        <Tag color="purple" style={{ border: 'none' }}>
+          第{round || 1}轮
+        </Tag>
+      )
     },
     {
       title: '面试官',
@@ -105,9 +156,9 @@ const InterviewsList: React.FC = () => {
         );
       },
     },
-    { 
-      title: '面试时间', 
-      dataIndex: 'interview_time', 
+    {
+      title: '面试时间',
+      dataIndex: 'interview_time',
       key: 'interview_time',
       sorter: (a: any, b: any) => {
         const at = a?.interview_time ? new Date(a.interview_time).getTime() : 0;
@@ -116,8 +167,8 @@ const InterviewsList: React.FC = () => {
       },
       render: (time: string) => time ? new Date(time).toLocaleString() : '-'
     },
-    { 
-      title: '总分', 
+    {
+      title: '总分',
       key: 'total_score',
       render: (_, record: any) => {
         if (!record.scores) return '-';
@@ -128,13 +179,14 @@ const InterviewsList: React.FC = () => {
         return <span style={{ fontWeight: 600, color: '#0F172A' }}>{avg}</span>;
       }
     },
-    { 
-      title: '状态', 
-      dataIndex: 'status', 
+    {
+      title: '状态',
+      dataIndex: 'status',
       key: 'status',
       render: (status: string) => {
         const map: Record<string, {text: string, color: string}> = {
           scheduled: { text: '待面试', color: 'blue' },
+          in_progress: { text: '面试中', color: 'orange' },
           completed: { text: '已完成', color: 'green' },
           cancelled: { text: '已取消', color: 'default' }
         };
@@ -147,25 +199,40 @@ const InterviewsList: React.FC = () => {
       key: 'action',
       render: (_, record: any) => {
         // Check if interview is pending confirmation (has scores but status not completed)
-        const isPendingConfirmation = record.status !== 'completed' && 
+        const isPendingConfirmation = record.status !== 'completed' &&
                                       (record.result === 'pending' && record.scores && Object.keys(record.scores).length > 0);
-                                      
+
         return (
         <Space size="small">
-          {record.status !== 'completed' && !isPendingConfirmation && (
+          {record.status === 'scheduled' && (
             <Tooltip title="开始面试">
               <Button type="text" icon={<PlayCircleOutlined style={{ color: '#3B82F6' }} />} onClick={() => navigate(`/interviews/${record.id}/score`)} />
             </Tooltip>
           )}
-          
+
+          {record.status === 'in_progress' && !isPendingConfirmation && (
+            <Tooltip title="继续评分">
+              <Button type="text" icon={<PlayCircleOutlined style={{ color: '#F97316' }} />} onClick={() => navigate(`/interviews/${record.id}/score`)} />
+            </Tooltip>
+          )}
+
           {(record.status === 'completed' || isPendingConfirmation) && (
              <Tooltip title={isPendingConfirmation ? "确认结果" : "查看结果"}>
                <Button type="text" icon={<EyeOutlined style={{ color: isPendingConfirmation ? '#F59E0B' : '#10B981' }} />} onClick={() => navigate(`/interviews/${record.id}/result`)} />
              </Tooltip>
           )}
-          <Tooltip title="删除">
-            <Button type="text" danger icon={<DeleteOutlined />} onClick={() => handleDelete(record.id)} />
-          </Tooltip>
+
+          {canCancelInterview && (record.status === 'scheduled' || record.status === 'in_progress') && (
+            <Tooltip title="取消面试">
+              <Button type="text" danger icon={<StopOutlined />} onClick={() => handleOpenCancelModal(record.id)} />
+            </Tooltip>
+          )}
+
+          {canDeleteInterview && (
+            <Tooltip title="删除">
+              <Button type="text" danger icon={<DeleteOutlined />} onClick={() => handleDelete(record.id)} />
+            </Tooltip>
+          )}
         </Space>
       )},
     },
@@ -182,19 +249,42 @@ const InterviewsList: React.FC = () => {
           style={{ width: 160 }}
           options={[
             { value: 'scheduled', label: '待面试' },
+            { value: 'in_progress', label: '面试中' },
             { value: 'completed', label: '已完成' },
             { value: 'cancelled', label: '已取消' },
           ]}
         />
         <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/resumes')}>安排面试</Button>
       </div>
-      <Table 
-        columns={columns} 
-        dataSource={filteredData} 
-        loading={loading} 
-        rowKey="id" 
+      <Table
+        columns={columns}
+        dataSource={filteredData}
+        loading={loading}
+        rowKey="id"
         pagination={{ pageSize: 10, showSizeChanger: true }}
       />
+
+      {/* 取消面试弹窗 */}
+      <Modal
+        title="取消面试"
+        open={cancelModalVisible}
+        onOk={handleCancelInterview}
+        onCancel={() => setCancelModalVisible(false)}
+        confirmLoading={cancelling}
+        okText="确认取消"
+        cancelText="返回"
+        okButtonProps={{ danger: true }}
+      >
+        <p style={{ marginBottom: 12, color: '#64748B' }}>请输入取消面试的原因：</p>
+        <Input.TextArea
+          rows={3}
+          value={cancelReason}
+          onChange={(e) => setCancelReason(e.target.value)}
+          placeholder="请输入取消原因..."
+          maxLength={500}
+          showCount
+        />
+      </Modal>
     </div>
   );
 };

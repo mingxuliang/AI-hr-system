@@ -3,17 +3,48 @@ from sqlalchemy.orm import Session, joinedload
 from app.models.models import Interview, Resume, Position, InterviewStatus, InterviewResult, QuestionBank, ResumeStatus, ScreeningResult, InterviewPanel, User
 from app.schemas.interview import InterviewCreate, InterviewUpdate, InterviewScore
 from fastapi import BackgroundTasks
-# ...
+import logging
+
+logger = logging.getLogger(__name__)
+
+def start_interview(db: Session, interview_id: UUID):
+    """
+    开始面试，将状态从 SCHEDULED 改为 IN_PROGRESS。
+    """
+    db_interview = db.query(Interview).filter(Interview.id == interview_id).first()
+    if not db_interview:
+        return None
+
+    if db_interview.status != InterviewStatus.SCHEDULED:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot start interview with status {db_interview.status.value}"
+        )
+
+    db_interview.status = InterviewStatus.IN_PROGRESS
+    db.commit()
+    db.refresh(db_interview)
+
+    print(f"Interview {interview_id} status changed to IN_PROGRESS")
+    return db_interview
 
 def submit_interview_panel_score(db: Session, interview_id: UUID, interviewer_id: UUID, score_data: InterviewScore):
     """
     Submit score for a specific interviewer (panel member).
+    在第一次提交评分时，将面试状态改为 IN_PROGRESS。
     """
+    # 首先检查面试状态，如果还是 SCHEDULED，则改为 IN_PROGRESS
+    db_interview = db.query(Interview).get(interview_id)
+    if db_interview and db_interview.status == InterviewStatus.SCHEDULED:
+        db_interview.status = InterviewStatus.IN_PROGRESS
+        print(f"Interview {interview_id} status auto-changed to IN_PROGRESS on first score submission")
+        db.commit()
+
     panel = db.query(InterviewPanel).filter(
         InterviewPanel.interview_id == interview_id,
         InterviewPanel.interviewer_id == interviewer_id
     ).first()
-    
+
     if not panel:
         # Create new panel entry if not exists (should usually exist if assigned, but for safety)
         panel = InterviewPanel(
@@ -30,7 +61,7 @@ def submit_interview_panel_score(db: Session, interview_id: UUID, interviewer_id
         panel.comments = score_data.comments
         panel.total_score = sum(score_data.scores.values()) // len(score_data.scores) if score_data.scores else 0
         panel.is_submitted = True
-        
+
     db.commit()
     db.refresh(panel)
     
@@ -146,14 +177,19 @@ def aggregate_panel_scores(db: Session, interview_id: UUID, background_tasks: Ba
             generate_evaluation_background,
             db_interview.id,
             {
-                "scores": aggregated_scores, 
+                "scores": aggregated_scores,
                 "panel_details": panel_details_str,
                 "transcripts": transcript_context
             }
         )
-        
+
+        # 状态已经是 IN_PROGRESS（因为有人提交了评分）
+        # 后台任务完成后会将状态改为 COMPLETED
+        # 这里不需要手动改状态，让后台任务处理
+
         db.commit()
         db.refresh(db_interview)
+        print(f"Panel scores aggregated for interview {interview_id}, AI evaluation triggered")
         return db_interview
     return None
 from fastapi import HTTPException
@@ -172,16 +208,16 @@ def _normalize_dt_utc(dt):
         return dt.replace(tzinfo=timezone.utc)
     return dt.astimezone(timezone.utc)
 
-def generate_questions_background(interview_id: UUID, question_bank_ids: list, question_count: int):
+def generate_questions_background(interview_id: UUID, question_bank_ids: list, question_count: int, interview_category: str = 'technical'):
     db = SessionLocal()
     try:
         interview = db.query(Interview).filter(Interview.id == interview_id).first()
         if not interview:
             return
-            
+
         resume = db.query(Resume).filter(Resume.id == interview.resume_id).first()
         position = db.query(Position).filter(Position.id == interview.position_id).first()
-        
+
         if not resume or not position:
             return
 
@@ -194,18 +230,19 @@ def generate_questions_background(interview_id: UUID, question_bank_ids: list, q
                     content = read_file_content(qb.source_file)
                     if content:
                         qb_content += f"\n--- 参考题库: {qb.name} ---\n{content[:5000]}\n"
-        
+
         # 生成面试题
         position_desc = f"{position.title}\n{position.description}\n{position.requirements}"
         resume_data = resume.parsed_data if resume.parsed_data else {}
-        
+
         questions = generate_interview_questions(
-            resume_data, 
-            position_desc, 
-            question_bank_content=qb_content,
-            count=question_count
+            resume_data,
+            position_desc,
+            qb_content,
+            question_count,
+            interview_category
         )
-        
+
         interview.questions = questions
         db.commit()
         
@@ -219,11 +256,11 @@ def create_interview(db: Session, interview: InterviewCreate, background_tasks: 
     resume = db.query(Resume).filter(Resume.id == interview.resume_id).first()
     if not resume:
         raise HTTPException(status_code=404, detail="Resume not found")
-        
+
     position = db.query(Position).filter(Position.id == interview.position_id).first()
     if not position:
         raise HTTPException(status_code=404, detail="Position not found")
-    
+
     db_interview = Interview(
         resume_id=interview.resume_id,
         position_id=interview.position_id,
@@ -231,22 +268,70 @@ def create_interview(db: Session, interview: InterviewCreate, background_tasks: 
         interview_time=_normalize_dt_utc(interview.interview_time),
         questions=[], # Initially empty
         status=InterviewStatus.SCHEDULED,
-        panel_members=interview.panel_members
+        panel_members=interview.panel_members,
+        round=interview.round or 1
     )
-    
+
+    # 存储面试类型和地点信息到 comments 中
+    interview_category = interview.interview_category or 'technical'
+    if interview.interview_type or interview.interview_location or interview.meeting_link or interview_category:
+        db_interview.comments = {
+            "interview_type": interview.interview_type or "onsite",
+            "interview_category": interview_category,
+            "interview_location": interview.interview_location,
+            "meeting_link": interview.meeting_link
+        }
+
     db.add(db_interview)
     db.commit()
     db.refresh(db_interview)
-    
-    # Add background task
-    background_tasks.add_task(
-        generate_questions_background, 
-        db_interview.id, 
-        interview.question_bank_ids, 
-        interview.question_count or 5
-    )
-    
+
+    # Add background task to generate questions (unless skipped)
+    if not interview.skip_ai_questions:
+        background_tasks.add_task(
+            generate_questions_background,
+            db_interview.id,
+            interview.question_bank_ids,
+            interview.question_count or 5,
+            interview_category
+        )
+
+    # Add background task to send invitation email (unless skipped)
+    if not interview.skip_email:
+        background_tasks.add_task(
+            send_interview_invitation_background,
+            db_interview.id
+        )
+
     return db_interview
+
+
+def send_interview_invitation_background(interview_id: UUID):
+    """
+    后台任务：发送面试邀请邮件
+    """
+    from app.config.database import SessionLocal
+    from app.services.mail_service import get_mail_service
+
+    db = SessionLocal()
+    try:
+        interview = db.query(Interview).filter(Interview.id == interview_id).first()
+        if not interview:
+            logger.warning(f"Interview {interview_id} not found for sending invitation")
+            return
+
+        mail_service = get_mail_service(db)
+        result = mail_service.send_interview_invitation_for_interview(interview)
+
+        if result["success"]:
+            logger.info(f"Interview invitation sent successfully for interview {interview_id}")
+        else:
+            logger.warning(f"Failed to send invitation for interview {interview_id}: {result['errors']}")
+
+    except Exception as e:
+        logger.error(f"Error sending interview invitation for {interview_id}: {e}")
+    finally:
+        db.close()
 
 def export_interview_result(db: Session, interview_id: UUID, format: str = "markdown"):
     db_interview = db.query(Interview).options(
@@ -368,10 +453,76 @@ def delete_interview(db: Session, interview_id: UUID):
     db_interview = db.query(Interview).filter(Interview.id == interview_id).first()
     if not db_interview:
         return None
-    
+
     db.delete(db_interview)
     db.commit()
     return db_interview
+
+def cancel_interview(db: Session, interview_id: UUID, reason: str = None):
+    """
+    取消面试，将状态改为 CANCELLED。
+    只有 SCHEDULED 或 IN_PROGRESS 状态的面试可以取消。
+    """
+    db_interview = db.query(Interview).filter(Interview.id == interview_id).first()
+    if not db_interview:
+        return None
+
+    if db_interview.status == InterviewStatus.COMPLETED:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot cancel a completed interview."
+        )
+
+    db_interview.status = InterviewStatus.CANCELLED
+    if reason:
+        existing_comments = db_interview.comments or {}
+        existing_comments["cancel_reason"] = reason
+        db_interview.comments = existing_comments
+
+    db.commit()
+    db.refresh(db_interview)
+    print(f"Interview {interview_id} cancelled")
+    return db_interview
+
+def get_submission_status(db: Session, interview_id: UUID):
+    """
+    获取面试的评分提交状态。
+    返回各面试官是否已提交评分。
+    """
+    db_interview = db.query(Interview).filter(Interview.id == interview_id).first()
+    if not db_interview:
+        return None
+
+    panel_members = db_interview.panel_members or []
+    panels = db.query(InterviewPanel).filter(
+        InterviewPanel.interview_id == interview_id
+    ).all()
+
+    submission_status = {}
+    for member_id in panel_members:
+        # 将字符串 ID 转换为 UUID 进行查询
+        try:
+            member_uuid = UUID(member_id) if isinstance(member_id, str) else member_id
+        except (ValueError, TypeError):
+            member_uuid = member_id
+
+        member_panel = next(
+            (p for p in panels if str(p.interviewer_id) == str(member_id)),
+            None
+        )
+        interviewer = db.query(User).filter(User.id == member_uuid).first()
+        submission_status[str(member_id)] = {
+            "name": interviewer.full_name if interviewer else "Unknown",
+            "submitted": member_panel.is_submitted if member_panel else False,
+            "submitted_at": member_panel.updated_at if member_panel and member_panel.is_submitted else None
+        }
+
+    return {
+        "interview_id": str(interview_id),
+        "total_members": len(panel_members),
+        "submitted_count": sum(1 for s in submission_status.values() if s["submitted"]),
+        "members": submission_status
+    }
 
 def generate_evaluation_background(interview_id: UUID, score_data: dict):
     db = SessionLocal()
@@ -420,25 +571,25 @@ def generate_evaluation_background(interview_id: UUID, score_data: dict):
     finally:
         db.close()
 
-def confirm_interview_result(db: Session, interview_id: UUID, result: str):
+def confirm_interview_result(db: Session, interview_id: UUID, result: str, background_tasks: BackgroundTasks = None):
     db_interview = db.query(Interview).filter(Interview.id == interview_id).first()
     if not db_interview:
         return None
-        
+
     # 更新结果和状态
     # result string comes from frontend as 'passed', 'rejected', 'waitlist' (lowercase)
     # InterviewResult enum members are PASSED, REJECTED, WAITLIST (uppercase)
     result_upper = result.upper()
-    
+
     if result_upper in InterviewResult.__members__:
         db_interview.result = InterviewResult[result_upper]
     else:
         # Fallback or error handling
         print(f"Invalid result value: {result}")
         return None
-    
+
     db_interview.status = InterviewStatus.COMPLETED
-    
+
     # 同步更新简历状态
     if db_interview.resume_id:
         resume = db.query(Resume).filter(Resume.id == db_interview.resume_id).first()
@@ -452,28 +603,63 @@ def confirm_interview_result(db: Session, interview_id: UUID, result: str):
             elif db_interview.result == InterviewResult.WAITLIST:
                 resume.status = ResumeStatus.COMPLETED
                 resume.screening_result = ScreeningResult.WAITLIST
-            
+
             # Commit explicitly for resume if needed, but db.commit() below handles all changes in session
-            
+
     db.commit()
     db.refresh(db_interview)
+
+    # 发送结果通知邮件（后台任务）
+    if background_tasks:
+        background_tasks.add_task(
+            send_result_notification_background,
+            db_interview.id
+        )
+
     return db_interview
+
+
+def send_result_notification_background(interview_id: UUID):
+    """
+    后台任务：发送面试结果通知邮件
+    """
+    from app.config.database import SessionLocal
+    from app.services.mail_service import get_mail_service
+
+    db = SessionLocal()
+    try:
+        interview = db.query(Interview).filter(Interview.id == interview_id).first()
+        if not interview:
+            logger.warning(f"Interview {interview_id} not found for sending result notification")
+            return
+
+        mail_service = get_mail_service(db)
+        result = mail_service.send_result_notification_for_interview(interview)
+
+        if result["success"]:
+            logger.info(f"Result notification sent successfully for interview {interview_id}")
+        else:
+            logger.warning(f"Failed to send result notification for interview {interview_id}: {result.get('error')}")
+
+    except Exception as e:
+        logger.error(f"Error sending result notification for {interview_id}: {e}")
+    finally:
+        db.close()
 
 def submit_interview_score(db: Session, interview_id: UUID, score_data: InterviewScore, background_tasks: BackgroundTasks):
     db_interview = db.query(Interview).filter(Interview.id == interview_id).first()
     if not db_interview:
         return None
-        
+
+    # 如果状态是 SCHEDULED，自动改为 IN_PROGRESS
+    if db_interview.status == InterviewStatus.SCHEDULED:
+        db_interview.status = InterviewStatus.IN_PROGRESS
+        print(f"Interview {interview_id} status auto-changed to IN_PROGRESS on score submission")
+
     # 保存评分和评语
     db_interview.scores = score_data.scores
     db_interview.comments = score_data.comments
-    
-    # 临时设置为 COMPLETED，但实际上还在处理中
-    # 或者可以引入一个新的状态 PROCESSING
-    # 为了简单起见，我们先不改变状态，或者保持 SCHEDULED 直到生成完毕
-    # 但前端需要知道已经提交了。
-    # 这里我们只保存数据，真正的状态变更在后台任务完成
-    
+
     db.commit()
     db.refresh(db_interview)
     

@@ -121,22 +121,35 @@ def generate_resume_markdown(resume_text: str) -> str:
         return resume_text
 
 def generate_interview_questions(
-    resume_data: Dict, 
+    resume_data: Dict,
     position_description: str,
     question_bank_content: str = "",
-    count: int = 5
+    count: int = 5,
+    interview_category: str = "technical"
 ) -> list:
+    # 面试类型描述映射
+    category_descriptions = {
+        "hr": "HR面试，主要考察候选人的综合素质、沟通能力、团队协作、职业规划、薪资期望等",
+        "technical": "技术面试，主要考察候选人的专业技能、技术深度、问题解决能力、项目经验等",
+        "manager": "主管面试，主要考察候选人的业务理解、团队管理、项目把控、跨部门协作等能力",
+        "ceo": "CEO面试，主要考察候选人的战略思维、价值观匹配、行业洞察、长期发展潜力等",
+        "comprehensive": "综合面试，全面考察候选人的技术能力、综合素质、发展潜力等各方面"
+    }
+
+    category_desc = category_descriptions.get(interview_category, category_descriptions["technical"])
+
     prompt_data = prompt_manager.get_prompt(
-        "generate_interview_questions", 
-        resume_data=json.dumps(resume_data, ensure_ascii=False), 
+        "generate_interview_questions",
+        resume_data=json.dumps(resume_data, ensure_ascii=False),
         position_description=position_description,
         question_bank_content=question_bank_content,
-        count=count
+        count=count,
+        interview_category=category_desc
     )
-    
+
     if not prompt_data.get("user"):
         return []
-        
+
     try:
         cfg = _get_llm_config()
         extra = {"temperature": cfg["llm_temperature"]}

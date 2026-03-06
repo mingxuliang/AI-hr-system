@@ -12,10 +12,18 @@ class InterviewBase(BaseModel):
     interviewer: Optional[str] = None
     interview_time: Optional[datetime] = None
     panel_members: Optional[List[str]] = [] # List of user IDs for the panel (strings or UUIDs)
-    
+    round: Optional[int] = 1
+    interview_type: Optional[str] = 'onsite'  # onsite, video, phone - 面试形式
+    interview_category: Optional[str] = 'technical'  # hr, technical, manager, ceo, comprehensive - 面试类型
+    interview_location: Optional[str] = None
+    meeting_link: Optional[str] = None
+
 class InterviewCreate(InterviewBase):
     question_bank_ids: Optional[List[UUID]] = []
     question_count: Optional[int] = 5
+    skip_ai_questions: Optional[bool] = False
+    skip_email: Optional[bool] = False
+    skip_ai_questions: Optional[bool] = False
 
 class InterviewUpdate(BaseModel):
     interviewer: Optional[str] = None
@@ -56,5 +64,5 @@ class InterviewResponse(InterviewBase):
     resume: Optional[ResumeResponse] = None
     position: Optional[PositionResponse] = None
     panels: Optional[List[InterviewPanelResponse]] = []
-    
+
     model_config = ConfigDict(from_attributes=True)

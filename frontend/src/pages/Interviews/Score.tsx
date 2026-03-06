@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Card, Descriptions, Button, InputNumber, Form, Input, Row, Col, Typography, message, Divider, Tag, Space, Spin, Modal, Popconfirm, Select, Collapse, Tooltip } from 'antd';
+import { Card, Descriptions, Button, InputNumber, Form, Input, Row, Col, Typography, message, Divider, Tag, Space, Spin, Modal, Popconfirm, Select, Collapse, Tooltip, List, Avatar, Progress } from 'antd';
 import { useParams, useNavigate } from 'react-router-dom';
-import { EditOutlined, DeleteOutlined, PlusOutlined, SaveOutlined, CloseOutlined, DownloadOutlined, FilePdfOutlined, FileWordOutlined, LeftOutlined, RightOutlined, CheckCircleOutlined, CheckCircleFilled, CaretRightOutlined, AudioOutlined, LoadingOutlined, ExpandOutlined, CompressOutlined } from '@ant-design/icons';
+import { EditOutlined, DeleteOutlined, PlusOutlined, SaveOutlined, CloseOutlined, DownloadOutlined, FilePdfOutlined, FileWordOutlined, LeftOutlined, RightOutlined, CheckCircleOutlined, CheckCircleFilled, CaretRightOutlined, AudioOutlined, LoadingOutlined, ExpandOutlined, CompressOutlined, PlayCircleOutlined, UserOutlined, StopOutlined } from '@ant-design/icons';
 import request from '../../utils/request';
+import { useAuth } from '../../contexts/AuthContext';
 
 const { Title, Text, Paragraph } = Typography;
 const { TextArea } = Input;
@@ -10,18 +11,19 @@ const { TextArea } = Input;
 const InterviewScore: React.FC = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [interview, setInterview] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [questions, setQuestions] = useState<any[]>([]);
   const [editingIndex, setEditingIndex] = useState<number>(-1);
   const [editForm] = Form.useForm();
-  
+
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  
+
   // Add Question Modal State
   const [isAddModalVisible, setIsAddModalVisible] = useState(false);
   const [addForm] = Form.useForm();
-  
+
   // Scoring state
   const [scores, setScores] = useState<Record<string, number>>({});
   const [comments, setComments] = useState<Record<string, string>>({});
@@ -34,9 +36,22 @@ const InterviewScore: React.FC = () => {
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
   const [transcripts, setTranscripts] = useState<Record<string, string>>({});
 
+  // 面试官提交状态
+  const [submissionStatus, setSubmissionStatus] = useState<any>(null);
+  const [startingInterview, setStartingInterview] = useState(false);
+
+  // 取消面试相关状态
+  const [cancelModalVisible, setCancelModalVisible] = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
+  const [cancelling, setCancelling] = useState(false);
+
+  // 判断是否可以取消面试（仅 HR/Admin 可见）
+  const canCancelInterview = user?.role === 'admin' || user?.role === 'hr';
+
   useEffect(() => {
     if (id) {
       fetchInterview(id);
+      fetchSubmissionStatus(id);
     }
   }, [id]);
 
@@ -65,7 +80,7 @@ const InterviewScore: React.FC = () => {
     if (!silent) setLoading(true);
     try {
       const res = await request.get(`/interviews/${interviewId}`) as any;
-      
+
       // Check if already evaluated (main result)
       if (res.evaluation || (res.result === 'pending' && res.scores && Object.keys(res.scores).length > 0)) {
           // Check if current user has submitted panel score
@@ -76,7 +91,7 @@ const InterviewScore: React.FC = () => {
              return;
           }
       }
-      
+
       setInterview(res);
       setQuestions(res.questions || []);
     } catch (error) {
@@ -86,24 +101,74 @@ const InterviewScore: React.FC = () => {
     }
   };
 
+  // 获取面试官提交状态
+  const fetchSubmissionStatus = async (interviewId: string) => {
+    try {
+      const res = await request.get(`/interviews/${interviewId}/submission-status`) as any;
+      setSubmissionStatus(res);
+    } catch (error) {
+      // 静默失败，不影响主要功能
+    }
+  };
+
+  // 开始面试
+  const handleStartInterview = async () => {
+    if (!id) return;
+
+    setStartingInterview(true);
+    try {
+      await request.post(`/interviews/${id}/start`);
+      message.success('面试已开始');
+      fetchInterview(id, true);
+    } catch (error: any) {
+      message.error(error?.response?.data?.detail || '开始面试失败');
+    } finally {
+      setStartingInterview(false);
+    }
+  };
+
+  // 取消面试
+  const handleCancelInterview = async () => {
+    if (!id) return;
+
+    if (!cancelReason.trim()) {
+      message.error('请输入取消原因');
+      return;
+    }
+
+    setCancelling(true);
+    try {
+      await request.post(`/interviews/${id}/cancel?reason=${encodeURIComponent(cancelReason)}`);
+      message.success('面试已取消');
+      setCancelModalVisible(false);
+      setCancelReason('');
+      navigate('/interviews');
+    } catch (error: any) {
+      message.error(error?.response?.data?.detail || '取消面试失败');
+    } finally {
+      setCancelling(false);
+    }
+  };
+
   // Poll for collaboration data
   useEffect(() => {
     let interval: any;
-    
+
     // Check status immediately
     if (interview && interview.status === 'completed' && interview.evaluation) {
          navigate(`/interviews/${id}/result`);
          return;
     }
-    
+
     // Poll regardless of showOtherScores if we are waiting for completion
     // Or just make it simple: always poll every 5s if not completed
     if (id && (!interview || interview.status !== 'completed')) {
         // Initial fetch
         if (!interview) fetchInterview(id, true);
-        
+
         interval = setInterval(() => {
             fetchInterview(id, true);
+            fetchSubmissionStatus(id);
         }, 5000);
     }
     return () => {
@@ -361,6 +426,29 @@ const InterviewScore: React.FC = () => {
 
   const headerExtra = (
       <Space>
+         {/* 开始面试按钮 */}
+         {interview?.status === 'scheduled' && (
+           <Button
+             type="primary"
+             icon={<PlayCircleOutlined />}
+             onClick={handleStartInterview}
+             loading={startingInterview}
+           >
+             开始面试
+           </Button>
+         )}
+
+         {/* 取消面试按钮 */}
+         {canCancelInterview && (interview?.status === 'scheduled' || interview?.status === 'in_progress') && (
+           <Button
+             danger
+             icon={<StopOutlined />}
+             onClick={() => setCancelModalVisible(true)}
+           >
+             取消面试
+           </Button>
+         )}
+
          <Button icon={isFullscreen ? <CompressOutlined /> : <ExpandOutlined />} onClick={toggleFullscreen}>
            {isFullscreen ? '退出全屏' : '全屏'}
          </Button>
@@ -412,12 +500,12 @@ const InterviewScore: React.FC = () => {
                 const isScored = scores[index] !== undefined;
                 const isCurrent = index === currentQuestionIndex;
                 return (
-                  <Button 
+                  <Button
                     key={index}
                     type={isCurrent ? 'primary' : 'default'}
                     shape="circle"
                     onClick={() => handleJumpToQuestion(index)}
-                    style={{ 
+                    style={{
                       borderColor: isScored ? '#10B981' : undefined,
                       color: !isCurrent && isScored ? '#10B981' : undefined,
                       fontWeight: isCurrent ? 'bold' : 'normal'
@@ -429,6 +517,45 @@ const InterviewScore: React.FC = () => {
               })}
             </Space>
           </div>
+
+          {/* 面试官提交状态 */}
+          {submissionStatus && submissionStatus.total_members > 0 && (
+            <Card
+              size="small"
+              style={{ marginBottom: 16, borderRadius: 8, background: '#F8FAFC' }}
+              title={
+                <Space>
+                  <span style={{ fontSize: 14, fontWeight: 500 }}>面试官评分状态</span>
+                  <Tag color="blue">{submissionStatus.submitted_count}/{submissionStatus.total_members} 已提交</Tag>
+                </Space>
+              }
+            >
+              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                {Object.entries(submissionStatus.members || {}).map(([memberId, member]: [string, any]) => (
+                  <div
+                    key={memberId}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      padding: '8px 12px',
+                      background: member.submitted ? '#ECFDF5' : '#FEF3C7',
+                      borderRadius: 6,
+                      border: `1px solid ${member.submitted ? '#86EFAC' : '#FCD34D'}`
+                    }}
+                  >
+                    <Avatar size="small" icon={<UserOutlined />} style={{ background: member.submitted ? '#10B981' : '#F59E0B' }} />
+                    <span style={{ fontWeight: 500 }}>{member.name}</span>
+                    {member.submitted ? (
+                      <Tag color="success" style={{ margin: 0, border: 'none' }}>已提交</Tag>
+                    ) : (
+                      <Tag color="warning" style={{ margin: 0, border: 'none' }}>未提交</Tag>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
         </div>
 
         <div style={{ flex: 1, overflow: 'hidden', paddingRight: '4px', paddingBottom: '4px', display: 'flex', flexDirection: 'column' }}>
@@ -626,6 +753,28 @@ const InterviewScore: React.FC = () => {
         <Form form={addForm} layout="vertical">
             {questionFormContent}
         </Form>
+      </Modal>
+
+      {/* 取消面试弹窗 */}
+      <Modal
+        title="取消面试"
+        open={cancelModalVisible}
+        onOk={handleCancelInterview}
+        onCancel={() => setCancelModalVisible(false)}
+        confirmLoading={cancelling}
+        okText="确认取消"
+        cancelText="返回"
+        okButtonProps={{ danger: true }}
+      >
+        <p style={{ marginBottom: 12, color: '#64748B' }}>请输入取消面试的原因：</p>
+        <Input.TextArea
+          rows={3}
+          value={cancelReason}
+          onChange={(e) => setCancelReason(e.target.value)}
+          placeholder="请输入取消原因..."
+          maxLength={500}
+          showCount
+        />
       </Modal>
     </div>
   );
