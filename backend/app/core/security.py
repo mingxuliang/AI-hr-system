@@ -48,6 +48,12 @@ def get_current_user_dep(token: str = Depends(oauth2_scheme), db: Session = Depe
     user = db.query(User).filter(User.email == email).first()
     if user is None:
         raise credentials_exception
+    
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="账户已被禁用，请联系管理员",
+        )
     return user
 
 def check_roles(required_roles: list[UserRole]):

@@ -36,6 +36,20 @@ const InterviewScore: React.FC = () => {
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
   const [transcripts, setTranscripts] = useState<Record<string, string>>({});
 
+  // 整场面试录音状态
+  const [fullRecording, setFullRecording] = useState(false);
+  const [fullRecordingTime, setFullRecordingTime] = useState(0);
+  const [fullRecordingTimer, setFullRecordingTimer] = useState<ReturnType<typeof setInterval> | null>(null);
+  const [fullRecordingBlob, setFullRecordingBlob] = useState<Blob | null>(null);
+  const [uploadingRecording, setUploadingRecording] = useState(false);
+  const [fullTranscript, setFullTranscript] = useState<string>('');
+
+  // 直接填写评价状态
+  const [directEvaluation, setDirectEvaluation] = useState('');
+  const [directSuggestion, setDirectSuggestion] = useState('');
+  const [directScore, setDirectScore] = useState(5);
+  const [submittingDirect, setSubmittingDirect] = useState(false);
+
   // 面试官提交状态
   const [submissionStatus, setSubmissionStatus] = useState<any>(null);
   const [startingInterview, setStartingInterview] = useState(false);
@@ -299,13 +313,13 @@ const InterviewScore: React.FC = () => {
     try {
       const newQuestions = [...questions];
       newQuestions.splice(index, 1);
-      
+
       // Sync to backend
       await request.put(`/interviews/${id}/questions`, newQuestions);
-      
+
       setQuestions(newQuestions);
       message.success('删除成功');
-      
+
       // Adjust current index if needed
       if (currentQuestionIndex >= newQuestions.length && newQuestions.length > 0) {
         setCurrentQuestionIndex(newQuestions.length - 1);
@@ -315,8 +329,132 @@ const InterviewScore: React.FC = () => {
     }
   };
 
+  // 整场面试录音功能
+  const startFullRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      const chunks: BlobPart[] = [];
+
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          chunks.push(e.data);
+        }
+      };
+
+      recorder.onstop = () => {
+        const blob = new Blob(chunks, { type: 'audio/webm' });
+        setFullRecordingBlob(blob);
+        stream.getTracks().forEach(track => track.stop());
+      };
+
+      recorder.start();
+      setMediaRecorder(recorder);
+      setFullRecording(true);
+      setFullRecordingTime(0);
+
+      // 开始计时
+      const timer = setInterval(() => {
+        setFullRecordingTime(prev => prev + 1);
+      }, 1000);
+      setFullRecordingTimer(timer);
+
+      message.success('开始录制整场面试');
+    } catch (error) {
+      message.error('无法访问麦克风，请检查权限设置');
+    }
+  };
+
+  const stopFullRecording = () => {
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      mediaRecorder.stop();
+      setFullRecording(false);
+      if (fullRecordingTimer) {
+        clearInterval(fullRecordingTimer);
+        setFullRecordingTimer(null);
+      }
+      message.success('录音已保存');
+    }
+  };
+
+  const uploadFullRecording = async () => {
+    if (!fullRecordingBlob || !id) return;
+
+    setUploadingRecording(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', fullRecordingBlob, 'full_interview.webm');
+
+      const response = await request.post(`/interviews/${id}/full-audio`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+
+      if (response.transcript) {
+        setFullTranscript(response.transcript);
+        message.success('录音已上传，AI正在分析...');
+      } else {
+        message.success('录音已上传');
+      }
+    } catch (error) {
+      message.error('上传录音失败');
+    } finally {
+      setUploadingRecording(false);
+    }
+  };
+
+  // 直接提交评价（支持同时上传录音）
+  const handleSubmitDirectEvaluation = async () => {
+    if (!directEvaluation.trim()) {
+      message.error('请填写面试评价');
+      return;
+    }
+
+    setSubmittingDirect(true);
+    try {
+      // 如果有录音未上传，先上传录音
+      if (fullRecordingBlob && !fullTranscript) {
+        setUploadingRecording(true);
+        const formData = new FormData();
+        formData.append('file', fullRecordingBlob, 'full_interview.webm');
+        formData.append('evaluation', directEvaluation);
+        formData.append('suggestion', directSuggestion);
+        formData.append('score', directScore.toString());
+
+        const response = await request.post(`/interviews/${id}/direct-evaluation-with-audio`, formData, {
+          headers: { 'Content-Type': 'multipart/form-data' }
+        });
+
+        if (response.transcript) {
+          setFullTranscript(response.transcript);
+        }
+        message.success('评价和录音已提交，AI正在综合分析...');
+      } else {
+        // 只有评价或已有录音转写
+        await request.post(`/interviews/${id}/direct-evaluation`, {
+          evaluation: directEvaluation,
+          suggestion: directSuggestion,
+          score: directScore,
+          transcript: fullTranscript || null  // 如果有转写内容也一起提交
+        });
+        message.success('评价已提交');
+      }
+
+      if (id) fetchInterview(id, true);
+    } catch (error) {
+      message.error('提交评价失败');
+    } finally {
+      setSubmittingDirect(false);
+      setUploadingRecording(false);
+    }
+  };
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
   const handleSubmitScore = async () => {
-    // Validate scores
     for (let i = 0; i < questions.length; i++) {
       if (scores[i] === undefined) {
         message.error(`请为第 ${i + 1} 题打分`);
@@ -331,7 +469,24 @@ const InterviewScore: React.FC = () => {
         comments 
       }) as any;
       message.success('评分已提交，正在生成报告...');
-      if (id) fetchInterview(id, true);
+      
+      if (id) {
+        let attempts = 0;
+        const maxAttempts = 10;
+        const checkStatus = async () => {
+          attempts++;
+          const res = await request.get(`/interviews/${id}`) as any;
+          if (res.status === 'completed') {
+            navigate(`/interviews/${id}/result`);
+          } else if (attempts < maxAttempts) {
+            setTimeout(checkStatus, 1000);
+          } else {
+            message.info('报告生成中，请稍后刷新查看');
+            navigate('/interviews');
+          }
+        };
+        setTimeout(checkStatus, 2000);
+      }
       
     } catch (error) {
       message.error('提交评分失败，请稍后重试');
@@ -368,8 +523,12 @@ const InterviewScore: React.FC = () => {
   };
 
   const currentQuestion = questions[currentQuestionIndex];
-  
-  if (interview && (!interview.questions || interview.questions.length === 0)) {
+
+  // 先检查 interview 是否存在
+  if (!interview) return null;
+
+  // AI正在生成题目（questions 为 null 或 undefined 表示正在生成）
+  if (interview.questions === null || interview.questions === undefined) {
       return (
         <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
             <Spin size="large" />
@@ -378,8 +537,9 @@ const InterviewScore: React.FC = () => {
         </div>
       );
   }
-  
-  if (!interview) return null;
+
+  // 检查是否跳过了AI生成题目（questions 为空数组）
+  const skippedAiQuestions = interview.questions.length === 0;
 
   const questionFormContent = (
     <>
@@ -426,34 +586,40 @@ const InterviewScore: React.FC = () => {
 
   const headerExtra = (
       <Space>
+         <Tooltip title="返回面试列表">
+           <Button icon={<LeftOutlined />} onClick={() => navigate('/interviews')} />
+         </Tooltip>
+
          {/* 开始面试按钮 */}
          {interview?.status === 'scheduled' && (
-           <Button
-             type="primary"
-             icon={<PlayCircleOutlined />}
-             onClick={handleStartInterview}
-             loading={startingInterview}
-           >
-             开始面试
-           </Button>
+           <Tooltip title="开始面试">
+             <Button
+               type="primary"
+               icon={<PlayCircleOutlined />}
+               onClick={handleStartInterview}
+               loading={startingInterview}
+             />
+           </Tooltip>
          )}
 
          {/* 取消面试按钮 */}
          {canCancelInterview && (interview?.status === 'scheduled' || interview?.status === 'in_progress') && (
-           <Button
-             danger
-             icon={<StopOutlined />}
-             onClick={() => setCancelModalVisible(true)}
-           >
-             取消面试
-           </Button>
+           <Tooltip title="取消面试">
+             <Button
+               danger
+               icon={<StopOutlined />}
+               onClick={() => setCancelModalVisible(true)}
+             />
+           </Tooltip>
          )}
 
-         <Button icon={isFullscreen ? <CompressOutlined /> : <ExpandOutlined />} onClick={toggleFullscreen}>
-           {isFullscreen ? '退出全屏' : '全屏'}
-         </Button>
-         <Button icon={<PlusOutlined />} onClick={handleAddQuestionClick}>添加题目</Button>
-         <Button type="primary" onClick={handleSubmitScore} loading={submitting}>提交评分</Button>
+         <Tooltip title={isFullscreen ? '退出全屏' : '全屏模式'}>
+           <Button icon={isFullscreen ? <CompressOutlined /> : <ExpandOutlined />} onClick={toggleFullscreen} />
+         </Tooltip>
+         
+         <Tooltip title="添加题目">
+           <Button icon={<PlusOutlined />} onClick={handleAddQuestionClick} />
+         </Tooltip>
       </Space>
   );
 
@@ -559,7 +725,114 @@ const InterviewScore: React.FC = () => {
         </div>
 
         <div style={{ flex: 1, overflow: 'hidden', paddingRight: '4px', paddingBottom: '4px', display: 'flex', flexDirection: 'column' }}>
-          {currentQuestion && (
+          {skippedAiQuestions ? (
+            <Card
+              style={{ flex: 1, borderRadius: '12px', border: '1px solid #E2E8F0', overflow: 'auto' }}
+              title={<Text strong>选择面试方式</Text>}
+            >
+              <div style={{ marginBottom: 24 }}>
+                <Text type="secondary">您选择了跳过AI生成面试题，请选择以下方式进行面试评估：</Text>
+              </div>
+
+              <Row gutter={[16, 16]}>
+                {/* 方式1: 添加面试题目 */}
+                <Col span={8}>
+                  <Card
+                    hoverable
+                    style={{ textAlign: 'center', height: '100%' }}
+                    onClick={handleAddQuestionClick}
+                  >
+                    <PlusOutlined style={{ fontSize: 32, color: '#1890ff', marginBottom: 12 }} />
+                    <Title level={5}>添加面试题目</Title>
+                    <Text type="secondary" style={{ fontSize: 12 }}>手动添加面试问题并进行评分</Text>
+                  </Card>
+                </Col>
+
+                {/* 方式2: 录制整场面试 */}
+                <Col span={8}>
+                  <Card style={{ textAlign: 'center', height: '100%' }}>
+                    <AudioOutlined style={{ fontSize: 32, color: fullRecording ? '#ff4d4f' : '#52c41a', marginBottom: 12 }} />
+                    <Title level={5}>录制整场面试</Title>
+                    <Text type="secondary" style={{ fontSize: 12 }}>录音后由AI自动分析生成评价</Text>
+                    <div style={{ marginTop: 12 }}>
+                      {fullRecording ? (
+                        <Space direction="vertical" size="small">
+                          <Text type="danger" strong>录制中: {formatTime(fullRecordingTime)}</Text>
+                          <Button type="primary" danger size="small" onClick={stopFullRecording}>
+                            停止录制
+                          </Button>
+                        </Space>
+                      ) : fullRecordingBlob ? (
+                        <Space direction="vertical" size="small">
+                          <Text type="success">录音已完成 ({formatTime(fullRecordingTime)})</Text>
+                          <Button type="primary" size="small" loading={uploadingRecording} onClick={uploadFullRecording}>
+                            上传并分析
+                          </Button>
+                        </Space>
+                      ) : (
+                        <Button type="default" size="small" onClick={startFullRecording}>
+                          开始录制
+                        </Button>
+                      )}
+                    </div>
+                    {fullTranscript && (
+                      <div style={{ marginTop: 12, textAlign: 'left', maxHeight: 100, overflow: 'auto', background: '#f5f5f5', padding: 8, borderRadius: 4 }}>
+                        <Text type="secondary" style={{ fontSize: 12 }}>{fullTranscript}</Text>
+                      </div>
+                    )}
+                  </Card>
+                </Col>
+
+                {/* 方式3: 直接填写评价 */}
+                <Col span={8}>
+                  <Card style={{ textAlign: 'center', height: '100%' }}>
+                    <EditOutlined style={{ fontSize: 32, color: '#722ed1', marginBottom: 12 }} />
+                    <Title level={5}>直接填写评价</Title>
+                    <Text type="secondary" style={{ fontSize: 12 }}>跳过题目直接填写综合评价</Text>
+                    <div style={{ marginTop: 12 }}>
+                      <InputNumber
+                        min={1}
+                        max={10}
+                        value={directScore}
+                        onChange={(v) => setDirectScore(v || 5)}
+                        style={{ width: 60, marginRight: 8 }}
+                      />
+                      <Text>分</Text>
+                    </div>
+                  </Card>
+                </Col>
+              </Row>
+
+              {/* 直接填写评价表单 */}
+              <div style={{ marginTop: 24 }}>
+                <Title level={5}>综合评价</Title>
+                <Input.TextArea
+                  rows={4}
+                  placeholder="请填写对候选人的综合评价，包括技术能力、沟通能力、项目经验等方面..."
+                  value={directEvaluation}
+                  onChange={(e) => setDirectEvaluation(e.target.value)}
+                  style={{ marginBottom: 12 }}
+                />
+                <Title level={5}>录用建议</Title>
+                <Input.TextArea
+                  rows={2}
+                  placeholder="请填写录用建议（录用/淘汰/待定）及原因..."
+                  value={directSuggestion}
+                  onChange={(e) => setDirectSuggestion(e.target.value)}
+                  style={{ marginBottom: 16 }}
+                />
+                <Button
+                  type="primary"
+                  size="large"
+                  loading={submittingDirect}
+                  onClick={handleSubmitDirectEvaluation}
+                  disabled={!directEvaluation.trim()}
+                >
+                  提交评价
+                </Button>
+              </div>
+            </Card>
+          ) : currentQuestion && (
             <Card 
               key={currentQuestionIndex}
               style={{ flex: 1, borderRadius: '12px', border: '1px solid #E2E8F0', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}

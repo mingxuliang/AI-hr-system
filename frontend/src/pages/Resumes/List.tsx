@@ -120,6 +120,13 @@ const ResumesList: React.FC = () => {
       const resumeInterviews = allInterviews.filter((i: any) => i.resume_id === record.id);
       setExistingInterviews(resumeInterviews);
 
+      // 检查是否已被录用
+      const hiredInterview = resumeInterviews.find((i: any) => i.result === 'hired');
+      if (hiredInterview) {
+        message.warning('该候选人已被录用，无法安排下一轮面试');
+        return;
+      }
+
       // 自动设置下一轮轮次
       const maxRound = resumeInterviews.reduce((max: number, i: any) => Math.max(max, i.round || 1), 0);
       interviewForm.setFieldsValue({

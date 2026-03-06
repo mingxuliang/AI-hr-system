@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Button, Space, message, Tag, Modal, Tooltip, Select, Input, Popconfirm } from 'antd';
-import { PlusOutlined, DeleteOutlined, PlayCircleOutlined, EyeOutlined, StopOutlined } from '@ant-design/icons';
+import { Table, Button, Space, message, Tag, Modal, Tooltip, Select, Input, Form, DatePicker, InputNumber, Row, Col, Checkbox, Typography } from 'antd';
+import { PlusOutlined, DeleteOutlined, PlayCircleOutlined, EyeOutlined, StopOutlined, TeamOutlined } from '@ant-design/icons';
 import request from '../../utils/request';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+
+const { Text } = Typography;
 
 const InterviewsList: React.FC = () => {
   const [data, setData] = useState([]);
@@ -14,6 +16,23 @@ const InterviewsList: React.FC = () => {
   const [cancelReason, setCancelReason] = useState('');
   const [selectedInterviewId, setSelectedInterviewId] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState(false);
+  
+  const [selectResumeModalVisible, setSelectResumeModalVisible] = useState(false);
+  const [pendingInterviewResumes, setPendingInterviewResumes] = useState<any[]>([]);
+  const [loadingResumes, setLoadingResumes] = useState(false);
+  const [selectedResume, setSelectedResume] = useState<any>(null);
+  const [interviewModalVisible, setInterviewModalVisible] = useState(false);
+  const [existingInterviews, setExistingInterviews] = useState<any[]>([]);
+  const [interviewers, setInterviewers] = useState([]);
+  const [questionBanks, setQuestionBanks] = useState([]);
+  const [submitting, setSubmitting] = useState(false);
+  const [interviewForm] = Form.useForm();
+  const [emailPreviewVisible, setEmailPreviewVisible] = useState(false);
+  const [emailContent, setEmailContent] = useState<any>(null);
+  const [pendingInterviewData, setPendingInterviewData] = useState<any>(null);
+  const [sendingEmail, setSendingEmail] = useState(false);
+  const [emailForm] = Form.useForm();
+  
   const navigate = useNavigate();
   const { user } = useAuth();
 
@@ -47,6 +66,15 @@ const InterviewsList: React.FC = () => {
           if (u?.id) map[String(u.id)] = name;
         });
         setInterviewerNameMap(map);
+        setInterviewers(res || []);
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    request.get('/question-banks')
+      .then((res: any) => {
+        setQuestionBanks(res || []);
       })
       .catch(() => {});
   }, []);
@@ -107,6 +135,152 @@ const InterviewsList: React.FC = () => {
     } finally {
       setCancelling(false);
     }
+  };
+
+  const handleOpenSelectResume = async () => {
+    setLoadingResumes(true);
+    setSelectResumeModalVisible(true);
+    try {
+      const res = await request.get('/resumes', { params: { status: 'pending_interview' } });
+      setPendingInterviewResumes(res || []);
+    } catch (error) {
+      message.error('获取简历列表失败');
+    } finally {
+      setLoadingResumes(false);
+    }
+  };
+
+  const handleSelectResume = (record: any) => {
+    setSelectedResume(record);
+    setSelectResumeModalVisible(false);
+    handleCreateInterviewClick(record);
+  };
+
+  const handleCreateInterviewClick = async (record: any) => {
+    interviewForm.resetFields();
+
+    try {
+      const allInterviews = await request.get('/interviews') as any[];
+      const resumeInterviews = allInterviews.filter((i: any) => i.resume_id === record.id);
+      setExistingInterviews(resumeInterviews);
+
+      const maxRound = resumeInterviews.reduce((max: number, i: any) => Math.max(max, i.round || 1), 0);
+      interviewForm.setFieldsValue({
+        question_count: 5,
+        interview_type: 'onsite',
+        interview_category: 'technical',
+        round: maxRound + 1
+      });
+    } catch (error) {
+      console.error('获取面试记录失败', error);
+      interviewForm.setFieldsValue({
+        question_count: 5,
+        interview_type: 'onsite',
+        round: 1
+      });
+    }
+
+    setInterviewModalVisible(true);
+  };
+
+  const handleInterviewOk = async () => {
+    try {
+      const values = await interviewForm.validateFields();
+      setSubmitting(true);
+
+      const interviewData = {
+        resume_id: selectedResume.id,
+        position_id: selectedResume.position_id,
+        interviewer: '面试小组',
+        panel_members: values.panel_members,
+        interview_time: values.interview_time ? values.interview_time.toISOString() : new Date().toISOString(),
+        question_bank_ids: values.question_bank_ids,
+        question_count: values.question_count,
+        round: values.round || 1,
+        interview_type: values.interview_type || 'onsite',
+        interview_category: values.interview_category || 'technical',
+        interview_location: values.interview_location,
+        meeting_link: values.meeting_link,
+        skip_ai_questions: values.skip_ai_questions || false
+      };
+
+      setPendingInterviewData(interviewData);
+
+      try {
+        const emailPreview = await request.post('/interviews/email-preview', {
+          resume_id: selectedResume.id,
+          position_id: selectedResume.position_id,
+          interview_time: values.interview_time ? values.interview_time.toISOString() : null,
+          round: values.round || 1,
+          interview_type: values.interview_type || 'onsite',
+          interview_category: values.interview_category || 'technical',
+          interview_location: values.interview_location,
+          meeting_link: values.meeting_link
+        });
+
+        setEmailContent(emailPreview);
+        emailForm.setFieldsValue({
+          subject: emailPreview.subject,
+          content: emailPreview.content,
+          send_email: true
+        });
+        setInterviewModalVisible(false);
+        setEmailPreviewVisible(true);
+      } catch (error) {
+        console.error('获取邮件预览失败', error);
+        const res = await request.post('/interviews', {
+          ...interviewData,
+          skip_email: true
+        });
+        message.success('面试安排成功');
+        setInterviewModalVisible(false);
+        fetchInterviews();
+        navigate(`/interviews/${res.id}/score`);
+      }
+    } catch (error) {
+      message.error('安排面试失败');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleConfirmAndSend = async () => {
+    try {
+      const values = await emailForm.validateFields();
+      setSendingEmail(true);
+
+      const res = await request.post('/interviews', {
+        ...pendingInterviewData,
+        skip_email: true
+      });
+
+      if (values.send_email && res.id) {
+        try {
+          await request.post(`/interviews/${res.id}/send-email`, {
+            subject: values.subject,
+            content: values.content
+          });
+          message.success('面试安排成功，邮件已发送');
+        } catch (error) {
+          message.warning('面试安排成功，但邮件发送失败');
+        }
+      } else {
+        message.success('面试安排成功');
+      }
+
+      setEmailPreviewVisible(false);
+      fetchInterviews();
+      navigate(`/interviews/${res.id}/score`);
+    } catch (error) {
+      message.error('安排面试失败');
+    } finally {
+      setSendingEmail(false);
+    }
+  };
+
+  const handleCancelPreview = () => {
+    setEmailPreviewVisible(false);
+    setInterviewModalVisible(true);
   };
 
   const columns = [
@@ -254,7 +428,9 @@ const InterviewsList: React.FC = () => {
             { value: 'cancelled', label: '已取消' },
           ]}
         />
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/resumes')}>安排面试</Button>
+        {(user?.role === 'admin' || user?.role === 'hr') && (
+          <Button type="primary" icon={<PlusOutlined />} onClick={handleOpenSelectResume}>安排面试</Button>
+        )}
       </div>
       <Table
         columns={columns}
@@ -284,6 +460,318 @@ const InterviewsList: React.FC = () => {
           maxLength={500}
           showCount
         />
+      </Modal>
+
+      {/* 选择简历弹窗 */}
+      <Modal
+        title="选择候选人"
+        open={selectResumeModalVisible}
+        onCancel={() => setSelectResumeModalVisible(false)}
+        footer={null}
+        width={900}
+        centered
+      >
+        <Table
+          columns={[
+            { 
+              title: '候选人', 
+              dataIndex: 'candidate_name', 
+              key: 'candidate_name',
+              render: (text: string) => <span style={{ fontWeight: 500, color: '#0F172A' }}>{text || '解析中...'}</span>
+            },
+            { title: '联系方式', dataIndex: 'contact', key: 'contact' },
+            { title: '应聘岗位', dataIndex: ['position', 'title'], key: 'position' },
+            { 
+              title: '匹配度', 
+              dataIndex: 'match_score', 
+              key: 'match_score',
+              render: (score: number) => (
+                <span style={{ 
+                  color: score >= 80 ? '#10B981' : score >= 60 ? '#F59E0B' : '#EF4444',
+                  fontWeight: 600 
+                }}>
+                  {score > 0 ? `${score}分` : '-'}
+                </span>
+              )
+            },
+            {
+              title: '操作',
+              key: 'action',
+              render: (_, record: any) => (
+                <Button 
+                  type="primary" 
+                  icon={<TeamOutlined />} 
+                  onClick={() => handleSelectResume(record)}
+                >
+                  安排面试
+                </Button>
+              )
+            }
+          ]}
+          dataSource={pendingInterviewResumes}
+          loading={loadingResumes}
+          rowKey="id"
+          pagination={{ pageSize: 5 }}
+          locale={{ emptyText: '暂无待面试的候选人' }}
+        />
+      </Modal>
+
+      {/* 安排面试弹窗 */}
+      <Modal
+        title="安排面试"
+        open={interviewModalVisible}
+        onOk={handleInterviewOk}
+        onCancel={() => setInterviewModalVisible(false)}
+        confirmLoading={submitting}
+        width={700}
+        centered
+        destroyOnClose
+        okText="确认"
+        cancelText="取消"
+      >
+        {selectedResume && (
+          <div style={{ marginBottom: 16, padding: 12, background: '#f5f5f5', borderRadius: 8 }}>
+            <Text strong>候选人：</Text>{selectedResume.candidate_name}
+            <br />
+            <Text strong>应聘岗位：</Text>{selectedResume.position?.title || '-'}
+          </div>
+        )}
+
+        {existingInterviews.length > 0 && (
+          <div style={{ marginBottom: 16, padding: 12, background: '#f5f5f5', borderRadius: 8 }}>
+            <Text strong>该候选人已有 {existingInterviews.length} 轮面试：</Text>
+            <div style={{ marginTop: 8 }}>
+              {existingInterviews.map((i: any) => (
+                <Tag key={i.id} color={i.status === 'completed' ? 'green' : 'blue'}>
+                  第{i.round || 1}轮 - {i.status === 'completed' ? '已完成' : '待面试'}
+                </Tag>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <Form
+          form={interviewForm}
+          layout="vertical"
+          style={{ marginTop: 24 }}
+        >
+          <Row gutter={16}>
+            <Col span={8}>
+              <Form.Item
+                name="round"
+                label="面试轮次"
+                rules={[{ required: true, message: '请选择面试轮次' }]}
+              >
+                <Select placeholder="选择轮次" size="large">
+                  <Select.Option value={1}>第1轮面试</Select.Option>
+                  <Select.Option value={2}>第2轮面试</Select.Option>
+                  <Select.Option value={3}>第3轮面试</Select.Option>
+                  <Select.Option value={4}>第4轮面试</Select.Option>
+                  <Select.Option value={5}>第5轮面试</Select.Option>
+                </Select>
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item
+                name="interview_category"
+                label="面试类型"
+                rules={[{ required: true, message: '请选择面试类型' }]}
+                extra="不同类型会生成不同侧重点的面试题"
+              >
+                <Select placeholder="选择面试类型" size="large">
+                  <Select.Option value="hr">HR面</Select.Option>
+                  <Select.Option value="technical">技术面</Select.Option>
+                  <Select.Option value="manager">主管面</Select.Option>
+                  <Select.Option value="ceo">CEO面</Select.Option>
+                  <Select.Option value="comprehensive">综合面</Select.Option>
+                </Select>
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item
+                name="interview_type"
+                label="面试形式"
+                rules={[{ required: true, message: '请选择面试形式' }]}
+              >
+                <Select placeholder="选择面试形式" size="large">
+                  <Select.Option value="onsite">现场面试</Select.Option>
+                  <Select.Option value="video">视频面试</Select.Option>
+                  <Select.Option value="phone">电话面试</Select.Option>
+                </Select>
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Form.Item
+            name="panel_members"
+            label="面试官"
+            rules={[{ required: true, message: '请选择面试官' }]}
+            extra="选择参与此次面试的面试官（可多选）"
+          >
+            <Select
+              mode="multiple"
+              placeholder="选择面试官"
+              size="large"
+              style={{ width: '100%' }}
+            >
+              {interviewers.map((user: any) => (
+                <Select.Option key={user.id} value={user.id}>{user.full_name || user.email}</Select.Option>
+              ))}
+            </Select>
+          </Form.Item>
+
+          <Form.Item
+            name="interview_time"
+            label="面试时间"
+          >
+            <DatePicker showTime style={{ width: '100%' }} size="large" />
+          </Form.Item>
+
+          <Form.Item
+            noStyle
+            shouldUpdate={(prevValues, currentValues) => prevValues.interview_type !== currentValues.interview_type}
+          >
+            {({ getFieldValue }) => {
+              const interviewType = getFieldValue('interview_type');
+              return (
+                <>
+                  {interviewType === 'onsite' && (
+                    <Form.Item
+                      name="interview_location"
+                      label="面试地点"
+                    >
+                      <Input placeholder="请输入面试地点，如：北京市朝阳区xxx大厦A座10层" size="large" />
+                    </Form.Item>
+                  )}
+                  {interviewType === 'video' && (
+                    <Form.Item
+                      name="meeting_link"
+                      label="会议链接"
+                    >
+                      <Input placeholder="请输入视频会议链接，如：https://meeting.xxx.com/xxx" size="large" />
+                    </Form.Item>
+                  )}
+                </>
+              );
+            }}
+          </Form.Item>
+
+          <Form.Item
+            name="skip_ai_questions"
+            valuePropName="checked"
+            initialValue={false}
+            extra="勾选后将跳过AI生成面试题，您可以稍后手动添加题目"
+          >
+            <Checkbox>跳过AI生成面试题</Checkbox>
+          </Form.Item>
+
+          <Form.Item
+            noStyle
+            shouldUpdate={(prevValues, currentValues) => prevValues.skip_ai_questions !== currentValues.skip_ai_questions}
+          >
+            {({ getFieldValue }) =>
+              !getFieldValue('skip_ai_questions') ? (
+                <>
+                  <Form.Item
+                    name="question_bank_ids"
+                    label="参考题库"
+                    extra="选择题库后，AI 将参考题库内容生成更精准的面试题"
+                  >
+                    <Select
+                      mode="multiple"
+                      placeholder="选择参考题库"
+                      size="large"
+                      style={{ width: '100%' }}
+                    >
+                      {questionBanks.map((qb: any) => (
+                        <Select.Option key={qb.id} value={qb.id}>{qb.name}</Select.Option>
+                      ))}
+                    </Select>
+                  </Form.Item>
+
+                  <Form.Item
+                    name="question_count"
+                    label="生成题目数量"
+                    initialValue={5}
+                  >
+                    <InputNumber min={1} max={20} size="large" style={{ width: '100%' }} />
+                  </Form.Item>
+                </>
+              ) : null
+            }
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      {/* 邮件预览弹窗 */}
+      <Modal
+        title="邮件预览"
+        open={emailPreviewVisible}
+        onCancel={handleCancelPreview}
+        width={800}
+        centered
+        destroyOnClose
+        footer={[
+          <Button key="cancel" onClick={handleCancelPreview}>
+            取消
+          </Button>,
+          <Button key="confirm" type="primary" loading={sendingEmail} onClick={handleConfirmAndSend}>
+            确认
+          </Button>
+        ]}
+      >
+        {emailContent && (
+          <div style={{ marginBottom: 16, padding: 12, background: '#f5f5f5', borderRadius: 8 }}>
+            <p><strong>收件人：</strong>{emailContent.to_email}</p>
+            <p><strong>候选人：</strong>{emailContent.candidate_name}</p>
+          </div>
+        )}
+
+        <Form form={emailForm} layout="vertical">
+          <Form.Item
+            name="subject"
+            label="邮件主题"
+            rules={[{ required: true, message: '请输入邮件主题' }]}
+          >
+            <Input placeholder="邮件主题" size="large" />
+          </Form.Item>
+
+          <Form.Item
+            name="content"
+            label="邮件内容"
+            rules={[{ required: true, message: '请输入邮件内容' }]}
+          >
+            <Input.TextArea
+              rows={10}
+              placeholder="邮件内容（支持 HTML 格式）"
+              style={{ fontFamily: 'monospace' }}
+            />
+          </Form.Item>
+
+          <Form.Item
+            label="邮件预览"
+          >
+            <div
+              style={{
+                border: '1px solid #d9d9d9',
+                borderRadius: 8,
+                padding: 16,
+                maxHeight: 300,
+                overflow: 'auto',
+                background: '#fff'
+              }}
+              dangerouslySetInnerHTML={{ __html: emailForm.getFieldValue('content') || '' }}
+            />
+          </Form.Item>
+
+          <Form.Item
+            name="send_email"
+            valuePropName="checked"
+            initialValue={true}
+          >
+            <Checkbox>发送邮件通知候选人</Checkbox>
+          </Form.Item>
+        </Form>
       </Modal>
     </div>
   );

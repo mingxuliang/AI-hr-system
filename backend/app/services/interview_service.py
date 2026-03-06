@@ -531,35 +531,39 @@ def generate_evaluation_background(interview_id: UUID, score_data: dict):
         if not db_interview:
             return
             
-        # 计算总分 (平均分)
         scores = score_data.get('scores', {})
         panel_details = score_data.get('panel_details', "")
         transcripts = score_data.get('transcripts', "")
         
         if not scores:
             print(f"No scores provided for evaluation {interview_id}")
+            db_interview.status = InterviewStatus.COMPLETED
+            db_interview.result = InterviewResult.PENDING
+            db.commit()
             return
 
         count = len(scores)
         total_sum = sum(scores.values())
         average_score = round(total_sum / count) if count > 0 else 0
         
-        # 生成评价
-        questions = db_interview.questions or []
-        evaluation_result = generate_interview_evaluation(
-            questions,
-            scores,
-            average_score,
-            panel_details=panel_details,
-            transcripts=transcripts
-        )
-        
-        # 更新面试记录
         db_interview.total_score = average_score
-        db_interview.evaluation = evaluation_result.get("evaluation")
-        db_interview.suggestion = evaluation_result.get("suggestion")
         
-        # 结果设为 PENDING，状态设为 COMPLETED (表示评分结束，等待最终确认)
+        try:
+            questions = db_interview.questions or []
+            evaluation_result = generate_interview_evaluation(
+                questions,
+                scores,
+                average_score,
+                panel_details=panel_details,
+                transcripts=transcripts
+            )
+            db_interview.evaluation = evaluation_result.get("evaluation")
+            db_interview.suggestion = evaluation_result.get("suggestion")
+        except Exception as eval_error:
+            print(f"Evaluation generation failed for interview {interview_id}: {eval_error}")
+            db_interview.evaluation = "AI评价生成失败，请手动填写评价"
+            db_interview.suggestion = "waitlist"
+        
         db_interview.result = InterviewResult.PENDING
         db_interview.status = InterviewStatus.COMPLETED
         
@@ -568,6 +572,14 @@ def generate_evaluation_background(interview_id: UUID, score_data: dict):
         
     except Exception as e:
         print(f"Error generating evaluation for interview {interview_id}: {e}")
+        try:
+            db_interview = db.query(Interview).filter(Interview.id == interview_id).first()
+            if db_interview:
+                db_interview.status = InterviewStatus.COMPLETED
+                db_interview.result = InterviewResult.PENDING
+                db.commit()
+        except:
+            pass
     finally:
         db.close()
 
@@ -577,8 +589,8 @@ def confirm_interview_result(db: Session, interview_id: UUID, result: str, backg
         return None
 
     # 更新结果和状态
-    # result string comes from frontend as 'passed', 'rejected', 'waitlist' (lowercase)
-    # InterviewResult enum members are PASSED, REJECTED, WAITLIST (uppercase)
+    # result string comes from frontend as 'passed', 'rejected', 'waitlist', 'hired', 'next_round' (lowercase)
+    # InterviewResult enum members are PASSED, REJECTED, WAITLIST, HIRED, NEXT_ROUND (uppercase)
     result_upper = result.upper()
 
     if result_upper in InterviewResult.__members__:
@@ -594,12 +606,23 @@ def confirm_interview_result(db: Session, interview_id: UUID, result: str, backg
     if db_interview.resume_id:
         resume = db.query(Resume).filter(Resume.id == db_interview.resume_id).first()
         if resume:
-            if db_interview.result == InterviewResult.PASSED:
+            # 录用 - 面试流程结束，简历状态更新为完成
+            if db_interview.result == InterviewResult.HIRED:
                 resume.status = ResumeStatus.COMPLETED
                 resume.screening_result = ScreeningResult.PASSED
+            # 进入下一轮 - 简历保持待面试状态，可以安排下一轮面试
+            elif db_interview.result == InterviewResult.NEXT_ROUND:
+                resume.status = ResumeStatus.PENDING_INTERVIEW
+                resume.screening_result = ScreeningResult.PASSED
+            # 通过（旧状态兼容）
+            elif db_interview.result == InterviewResult.PASSED:
+                resume.status = ResumeStatus.COMPLETED
+                resume.screening_result = ScreeningResult.PASSED
+            # 淘汰
             elif db_interview.result == InterviewResult.REJECTED:
                 resume.status = ResumeStatus.REJECTED
                 resume.screening_result = ScreeningResult.REJECTED
+            # 待定
             elif db_interview.result == InterviewResult.WAITLIST:
                 resume.status = ResumeStatus.COMPLETED
                 resume.screening_result = ScreeningResult.WAITLIST
@@ -609,8 +632,8 @@ def confirm_interview_result(db: Session, interview_id: UUID, result: str, backg
     db.commit()
     db.refresh(db_interview)
 
-    # 发送结果通知邮件（后台任务）
-    if background_tasks:
+    # 发送结果通知邮件（后台任务）- 录用、淘汰、进入下一轮都发送
+    if background_tasks and db_interview.result in [InterviewResult.HIRED, InterviewResult.REJECTED, InterviewResult.NEXT_ROUND]:
         background_tasks.add_task(
             send_result_notification_background,
             db_interview.id

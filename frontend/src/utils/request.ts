@@ -25,11 +25,22 @@ request.interceptors.response.use(
   },
   (error) => {
     if (error.response) {
+      const detail = error.response.data.detail || '请求失败';
+      
       if (error.response.status === 401) {
         localStorage.removeItem('token');
-        window.location.href = '/login';
+        if (window.location.pathname !== '/login') {
+          window.location.href = '/login';
+        }
+      } else if (error.response.status === 403) {
+        if (detail.includes('禁用')) {
+          localStorage.removeItem('token');
+          if (window.location.pathname !== '/login') {
+            window.location.href = '/login';
+          }
+        }
       }
-      message.error(error.response.data.detail || '请求失败');
+      message.error(detail);
     } else {
       message.error('网络错误');
     }

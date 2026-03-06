@@ -35,6 +35,11 @@ def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db:
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="账户已被禁用，请联系管理员",
+        )
     access_token_expires = timedelta(minutes=60 * 24 * 30) # 30 days
     access_token = create_access_token(
         data={"sub": user.email}, expires_delta=access_token_expires
@@ -49,6 +54,11 @@ def login(login_data: UserLogin, db: Session = Depends(get_db)):
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
             headers={"WWW-Authenticate": "Bearer"},
+        )
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="账户已被禁用，请联系管理员",
         )
     access_token_expires = timedelta(minutes=60 * 24 * 30)
     access_token = create_access_token(

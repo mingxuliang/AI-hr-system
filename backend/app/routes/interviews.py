@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Response
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Response, File, UploadFile, Form
 from sqlalchemy.orm import Session
 from app.config.database import get_db
 from app.schemas.interview import InterviewResponse, InterviewCreate, InterviewUpdate, InterviewScore
@@ -8,11 +8,11 @@ from app.services.interview_service import (
     submit_interview_panel_score, aggregate_panel_scores, start_interview, cancel_interview, get_submission_status
 )
 from app.schemas.interview import InterviewResponse, InterviewCreate, InterviewUpdate, InterviewScore, InterviewPanelResponse
-from app.models.models import User, UserRole, Resume, Position
+from app.models.models import User, UserRole, Resume, Position, InterviewStatus, InterviewResult
 from app.routes.auth import get_current_user
 from app.core.security import check_roles
 
-from typing import List
+from typing import List, Optional
 from uuid import UUID
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
@@ -480,3 +480,265 @@ def send_interview_email(
         return {"message": "邮件发送成功"}
     else:
         raise HTTPException(status_code=500, detail="邮件发送失败")
+
+
+class DirectEvaluationRequest(BaseModel):
+    evaluation: str
+    suggestion: Optional[str] = None
+    score: int = 5
+    transcript: Optional[str] = None  # 可选的录音转写内容
+
+
+@router.post("/{interview_id}/full-audio")
+def upload_full_interview_audio(
+    interview_id: UUID,
+    file: UploadFile = File(...),
+    background_tasks: BackgroundTasks = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """上传整场面试录音并进行AI分析"""
+    from app.services.audio_service import transcribe_audio
+
+    interview = get_interview(db, interview_id)
+    if not interview:
+        raise HTTPException(status_code=404, detail="Interview not found")
+
+    # 保存音频文件
+    upload_dir = f"uploads/full_audio/{interview_id}"
+    os.makedirs(upload_dir, exist_ok=True)
+
+    file_extension = file.filename.split(".")[-1] if "." in file.filename else "webm"
+    file_name = f"full_interview.{file_extension}"
+    file_path = os.path.join(upload_dir, file_name)
+
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    # 转写音频
+    try:
+        transcript = transcribe_audio(file_path)
+    except Exception as e:
+        transcript = f"转写失败: {str(e)}"
+
+    # 保存到数据库
+    interview.audio_records = {"full_interview": file_path}
+    interview.transcripts = {"full_interview": transcript}
+    db.commit()
+
+    # 如果有转写内容，后台生成评价
+    if transcript and background_tasks:
+        background_tasks.add_task(
+            generate_evaluation_from_transcript,
+            interview_id,
+            transcript
+        )
+
+    return {
+        "message": "上传成功",
+        "transcript": transcript
+    }
+
+
+@router.post("/{interview_id}/direct-evaluation")
+def submit_direct_evaluation(
+    interview_id: UUID,
+    evaluation_data: DirectEvaluationRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """直接提交面试评价（无需面试题），支持结合录音转写内容"""
+    interview = get_interview(db, interview_id)
+    if not interview:
+        raise HTTPException(status_code=404, detail="Interview not found")
+
+    # 检查是否有录音转写内容
+    transcripts = interview.transcripts or {}
+    full_transcript = transcripts.get("full_interview") or evaluation_data.transcript
+
+    if full_transcript:
+        # 有录音转写内容，后台结合面试官评价生成综合评价
+        background_tasks.add_task(
+            generate_combined_evaluation,
+            interview_id,
+            full_transcript,
+            evaluation_data.evaluation,
+            evaluation_data.suggestion,
+            evaluation_data.score
+        )
+        # 先保存面试官的评价
+        interview.evaluation = evaluation_data.evaluation
+        interview.suggestion = evaluation_data.suggestion
+        interview.total_score = evaluation_data.score
+        interview.scores = {"overall": evaluation_data.score}
+        interview.comments = {"overall": evaluation_data.evaluation, "interviewer_evaluation": evaluation_data.evaluation}
+    else:
+        # 没有录音，直接保存评价
+        interview.evaluation = evaluation_data.evaluation
+        interview.suggestion = evaluation_data.suggestion
+        interview.total_score = evaluation_data.score
+        interview.scores = {"overall": evaluation_data.score}
+        interview.comments = {"overall": evaluation_data.evaluation}
+        interview.status = InterviewStatus.COMPLETED
+        interview.result = InterviewResult.PENDING
+
+    db.commit()
+    db.refresh(interview)
+
+    return interview
+
+
+@router.post("/{interview_id}/direct-evaluation-with-audio")
+def submit_direct_evaluation_with_audio(
+    interview_id: UUID,
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    evaluation: str = Form(...),
+    suggestion: str = Form(None),
+    score: int = Form(5),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """同时上传录音和评价，AI综合分析生成最终评价"""
+    from app.services.audio_service import transcribe_audio
+
+    interview = get_interview(db, interview_id)
+    if not interview:
+        raise HTTPException(status_code=404, detail="Interview not found")
+
+    # 保存音频文件
+    upload_dir = f"uploads/full_audio/{interview_id}"
+    os.makedirs(upload_dir, exist_ok=True)
+
+    file_extension = file.filename.split(".")[-1] if "." in file.filename else "webm"
+    file_name = f"full_interview.{file_extension}"
+    file_path = os.path.join(upload_dir, file_name)
+
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    # 转写音频
+    try:
+        transcript = transcribe_audio(file_path)
+    except Exception as e:
+        transcript = f"转写失败: {str(e)}"
+
+    # 保存到数据库
+    interview.audio_records = {"full_interview": file_path}
+    interview.transcripts = {"full_interview": transcript}
+    interview.comments = {"overall": evaluation, "interviewer_evaluation": evaluation}
+
+    # 后台结合录音和评价生成综合评价
+    if transcript:
+        background_tasks.add_task(
+            generate_combined_evaluation,
+            interview_id,
+            transcript,
+            evaluation,
+            suggestion,
+            score
+        )
+
+    db.commit()
+    db.refresh(interview)
+
+    return {
+        "message": "上传成功",
+        "transcript": transcript
+    }
+
+
+def generate_evaluation_from_transcript(interview_id: UUID, transcript: str):
+    """根据转写内容生成评价（后台任务）"""
+    generate_combined_evaluation(interview_id, transcript, None, None, None)
+
+
+def generate_combined_evaluation(
+    interview_id: UUID,
+    transcript: str,
+    interviewer_evaluation: str = None,
+    interviewer_suggestion: str = None,
+    interviewer_score: int = None
+):
+    """根据录音转写和面试官评价综合生成评价（后台任务）"""
+    from app.config.database import SessionLocal
+    from app.services.ai_service import generate_text
+    from app.models.models import Interview as InterviewModel, Resume, Position
+
+    db = SessionLocal()
+    try:
+        interview = db.query(InterviewModel).filter(InterviewModel.id == interview_id).first()
+        if not interview:
+            return
+
+        # 获取简历和岗位信息
+        resume = db.query(Resume).filter(Resume.id == interview.resume_id).first()
+        position = db.query(Position).filter(Position.id == interview.position_id).first()
+
+        # 构建提示词
+        if interviewer_evaluation:
+            # 有面试官评价，结合录音分析
+            prompt = f"""请根据面试录音转写内容和面试官的评价，生成一份综合面试评价报告。
+
+候选人：{resume.candidate_name if resume else '未知'}
+应聘岗位：{position.title if position else '未知'}
+
+## 面试录音转写内容：
+{transcript}
+
+## 面试官填写的评价：
+{interviewer_evaluation}
+
+## 面试官的录用建议：
+{interviewer_suggestion or '无'}
+
+## 面试官评分：{interviewer_score or '未打分'}分
+
+请结合以上信息，生成一份综合评价报告，要求：
+1. 总结面试录音中的关键信息（技术能力、项目经验、沟通能力等）
+2. 分析面试官评价的准确性，如有出入请指出
+3. 给出最终的综合评价和录用建议
+4. 格式清晰，使用Markdown格式"""
+        else:
+            # 只有录音，没有面试官评价
+            prompt = f"""请根据以下面试录音转写内容，对候选人进行综合评价。
+
+候选人：{resume.candidate_name if resume else '未知'}
+应聘岗位：{position.title if position else '未知'}
+
+面试录音转写内容：
+{transcript}
+
+请从以下几个方面进行评价：
+1. 技术能力评估
+2. 沟通表达能力
+3. 项目经验分析
+4. 综合素质评价
+5. 录用建议
+
+请用中文回答，格式清晰。"""
+
+        # 调用AI生成评价
+        evaluation = generate_text(prompt)
+
+        if evaluation:
+            interview.evaluation = evaluation
+            interview.status = InterviewStatus.COMPLETED
+            interview.result = InterviewResult.PENDING
+
+            # 如果有面试官评分，保留
+            if interviewer_score:
+                interview.total_score = interviewer_score
+                interview.scores = {"overall": interviewer_score}
+
+            # 保存综合建议
+            if interviewer_suggestion:
+                interview.suggestion = interviewer_suggestion
+
+            db.commit()
+
+    except Exception as e:
+        print(f"生成评价失败: {e}")
+    finally:
+        db.close()

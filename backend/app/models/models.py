@@ -179,6 +179,8 @@ class InterviewResult(str, enum.Enum):
     PASSED = "passed"
     REJECTED = "rejected"
     WAITLIST = "waitlist"
+    HIRED = "hired"  # 录用
+    NEXT_ROUND = "next_round"  # 进入下一轮
 
 class InterviewStatus(str, enum.Enum):
     SCHEDULED = "scheduled"
@@ -203,10 +205,10 @@ class Interview(Base):
     panel_members = Column(JSON) # List of user IDs for the panel
     audio_records = Column(JSON) # Audio file paths per question (aggregated or primary)
     transcripts = Column(JSON) # Transcribed text per question (aggregated or primary)
-    result = Column(Enum(InterviewResult), default=InterviewResult.PENDING)
+    result = Column(Enum(InterviewResult, values_callable=lambda obj: [e.value for e in obj]), default=InterviewResult.PENDING)
     evaluation = Column(Text)
     suggestion = Column(Text)
-    status = Column(Enum(InterviewStatus), default=InterviewStatus.SCHEDULED)
+    status = Column(Enum(InterviewStatus, values_callable=lambda obj: [e.value for e in obj]), default=InterviewStatus.SCHEDULED)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     resume = relationship("Resume")

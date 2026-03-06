@@ -135,16 +135,20 @@ const InterviewResultPage: React.FC = () => {
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'passed': return 'success';
+      case 'hired': return 'success';
       case 'rejected': return 'error';
       case 'waitlist': return 'warning';
+      case 'next_round': return 'info';
       default: return 'info';
     }
   };
 
   const resultMap: Record<string, string> = {
-    passed: '录用',
+    passed: '通过',
+    hired: '录用',
     rejected: '不录用',
     waitlist: '待定',
+    next_round: '进入下一轮',
     pending: '待处理'
   };
 
@@ -178,14 +182,17 @@ const InterviewResultPage: React.FC = () => {
              请根据 AI 的评估意见和您的判断，确认最终的面试录用结果。
           </Paragraph>
           <Space size="large">
-              <Button type="primary" size="large" onClick={() => handleConfirmResult('passed')} style={{ backgroundColor: '#52c41a', borderColor: '#52c41a' }}>
-                  确认录用
+              <Button type="primary" size="large" onClick={() => handleConfirmResult('hired')} style={{ backgroundColor: '#52c41a', borderColor: '#52c41a' }}>
+                  录用
+              </Button>
+              <Button type="primary" size="large" onClick={() => handleConfirmResult('next_round')} style={{ backgroundColor: '#1890ff', borderColor: '#1890ff' }}>
+                  进入下一轮
+              </Button>
+              <Button size="large" onClick={() => handleConfirmResult('waitlist')}>
+                  待定
               </Button>
               <Button type="primary" size="large" danger onClick={() => handleConfirmResult('rejected')}>
                   淘汰
-              </Button>
-              <Button size="large" onClick={() => handleConfirmResult('waitlist')}>
-                  加入待定
               </Button>
           </Space>
       </div>
@@ -197,14 +204,17 @@ const InterviewResultPage: React.FC = () => {
              重新设置面试录用结果：
           </Paragraph>
           <Space>
-              <Button type={interview.result === 'passed' ? 'primary' : 'default'} onClick={() => handleConfirmResult('passed')} style={interview.result === 'passed' ? { backgroundColor: '#52c41a', borderColor: '#52c41a' } : {}}>
+              <Button type={interview.result === 'hired' ? 'primary' : 'default'} onClick={() => handleConfirmResult('hired')} style={interview.result === 'hired' ? { backgroundColor: '#52c41a', borderColor: '#52c41a' } : {}}>
                   录用
               </Button>
-              <Button type={interview.result === 'rejected' ? 'primary' : 'default'} danger={interview.result === 'rejected'} onClick={() => handleConfirmResult('rejected')}>
-                  淘汰
+              <Button type={interview.result === 'next_round' ? 'primary' : 'default'} onClick={() => handleConfirmResult('next_round')} style={interview.result === 'next_round' ? { backgroundColor: '#1890ff', borderColor: '#1890ff' } : {}}>
+                  进入下一轮
               </Button>
               <Button type={interview.result === 'waitlist' ? 'primary' : 'default'} onClick={() => handleConfirmResult('waitlist')}>
                   待定
+              </Button>
+              <Button type={interview.result === 'rejected' ? 'primary' : 'default'} danger={interview.result === 'rejected'} onClick={() => handleConfirmResult('rejected')}>
+                  淘汰
               </Button>
               <Button type="text" onClick={() => setIsEditingResult(false)}>取消</Button>
           </Space>

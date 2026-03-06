@@ -390,3 +390,26 @@ def chat_jd_stream(
     except Exception as e:
         print(f"JD chat stream failed: {e}")
         yield "data: " + json.dumps({"error": str(e)}, ensure_ascii=False) + "\n\n"
+
+
+def generate_text(prompt: str) -> str:
+    """
+    通用文本生成函数，用于生成面试评价等文本内容
+    """
+    try:
+        cfg = _get_llm_config()
+        extra = {"temperature": cfg["llm_temperature"]}
+        if cfg["llm_max_tokens"] is not None:
+            extra["max_tokens"] = cfg["llm_max_tokens"]
+
+        completion = _get_client().chat.completions.create(
+            model=cfg["llm_model"],
+            messages=[
+                {'role': 'user', 'content': prompt}
+            ],
+            **extra,
+        )
+        return completion.choices[0].message.content
+    except Exception as e:
+        print(f"Text generation failed: {e}")
+        return ""
