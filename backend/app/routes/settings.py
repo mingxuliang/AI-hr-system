@@ -109,6 +109,7 @@ def get_mail_settings(
         mail_from=config.mail_from,
         mail_from_name=config.mail_from_name or "招聘系统",
         mail_enabled=config.mail_enabled or False,
+        frontend_url=config.frontend_url,
     )
 
 
@@ -145,6 +146,9 @@ def update_mail_settings(
     if "mail_enabled" in data:
         config.mail_enabled = data["mail_enabled"]
 
+    if "frontend_url" in data:
+        config.frontend_url = (data["frontend_url"] or "").strip() or None
+
     db.commit()
     db.refresh(config)
 
@@ -157,6 +161,7 @@ def update_mail_settings(
         mail_from=config.mail_from,
         mail_from_name=config.mail_from_name or "招聘系统",
         mail_enabled=config.mail_enabled or False,
+        frontend_url=config.frontend_url,
     )
 
 

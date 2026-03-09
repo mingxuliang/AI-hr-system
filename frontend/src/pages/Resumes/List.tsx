@@ -438,9 +438,15 @@ const ResumesList: React.FC = () => {
           case 'pending_hr_decision': color = 'purple'; text = '待HR决策'; break;
           case 'auto_rejected_pending_review': color = 'orange'; text = 'AI建议淘汰'; break;
           case 'pending_interview': color = 'geekblue'; text = '待面试'; break;
+          case 'interview_passed': color = 'lime'; text = '面试通过'; break;
+          case 'interview_failed': color = 'magenta'; text = '面试未通过'; break;
+          case 'offer_pending': color = 'blue'; text = 'Offer待确认'; break;
+          case 'offer_accepted': color = 'success'; text = '已接受Offer'; break;
+          case 'offer_rejected': color = 'error'; text = '已拒绝Offer'; break;
           case 'waitlist': color = 'gold'; text = '备选'; break;
           case 'completed': color = 'success'; text = '已完成'; break;
           case 'rejected': color = 'error'; text = '已淘汰'; break;
+          case 'hired': color = 'success'; text = '已录用'; break;
           default: break;
         }
         return <Tag color={color}>{text}</Tag>;
@@ -563,9 +569,15 @@ const ResumesList: React.FC = () => {
                 <Select.Option value="pending_hr_decision">待HR决策</Select.Option>
                 <Select.Option value="auto_rejected_pending_review">AI建议淘汰</Select.Option>
                 <Select.Option value="pending_interview">待面试</Select.Option>
+                <Select.Option value="interview_passed">面试通过</Select.Option>
+                <Select.Option value="interview_failed">面试未通过</Select.Option>
+                <Select.Option value="offer_pending">Offer待确认</Select.Option>
+                <Select.Option value="offer_accepted">已接受Offer</Select.Option>
+                <Select.Option value="offer_rejected">已拒绝Offer</Select.Option>
                 <Select.Option value="waitlist">备选</Select.Option>
                 <Select.Option value="completed">已完成</Select.Option>
                 <Select.Option value="rejected">已淘汰</Select.Option>
+                <Select.Option value="hired">已录用</Select.Option>
               </Select>
             </Form.Item>
             <Form.Item>

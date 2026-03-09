@@ -20,6 +20,7 @@ type MailSettings = {
   mail_from?: string | null;
   mail_from_name: string;
   mail_enabled: boolean;
+  frontend_url?: string | null;
 };
 
 const SystemSettingsPage: React.FC = () => {
@@ -74,6 +75,7 @@ const SystemSettingsPage: React.FC = () => {
         mail_from: res.mail_from || undefined,
         mail_from_name: res.mail_from_name || '招聘系统',
         mail_enabled: res.mail_enabled || false,
+        frontend_url: res.frontend_url || undefined,
       });
       setEditingMailPassword(false);
     } catch (e) {
@@ -137,6 +139,7 @@ const SystemSettingsPage: React.FC = () => {
         mail_from: values.mail_from || null,
         mail_from_name: values.mail_from_name || '招聘系统',
         mail_enabled: values.mail_enabled || false,
+        frontend_url: values.frontend_url || null,
       };
       if (values.smtp_password && values.smtp_password.trim()) {
         payload.smtp_password = values.smtp_password.trim();
@@ -357,6 +360,14 @@ const SystemSettingsPage: React.FC = () => {
             label="发件人名称"
           >
             <Input placeholder="例如：招聘系统" autoComplete="off" />
+          </Form.Item>
+
+          <Form.Item
+            name="frontend_url"
+            label="前端访问地址"
+            extra={<Text type="secondary">用于生成邮件中的链接，如Offer确认链接。请填写完整的访问地址，如：https://hr.example.com</Text>}
+          >
+            <Input placeholder="例如：http://localhost:5173 或 https://hr.example.com" autoComplete="off" />
           </Form.Item>
         </Form>
       </Card>

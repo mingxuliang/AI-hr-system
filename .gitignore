@@ -5,6 +5,7 @@
 *.log
 *.sqlite
 *.db
+.claude/
 
 # Backend (Python)
 backend/__pycache__/

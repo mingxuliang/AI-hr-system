@@ -31,10 +31,11 @@ def get_resumes_route(
     limit: int = 100,
     candidate_name: str = None,
     status: str = None,
-    reviewer_id: Optional[UUID] = None,  # 面试官查看被指派的简历
+    position_id: Optional[UUID] = None,
+    reviewer_id: Optional[UUID] = None,
     db: Session = Depends(get_db)
 ):
-    return get_resumes(db, skip=skip, limit=limit, candidate_name=candidate_name, status=status, reviewer_id=reviewer_id)
+    return get_resumes(db, skip=skip, limit=limit, candidate_name=candidate_name, status=status, position_id=position_id, reviewer_id=reviewer_id)
 
 # ==================== 简历查重 ====================
 

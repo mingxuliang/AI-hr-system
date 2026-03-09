@@ -189,7 +189,7 @@ def reparse_resume(db: Session, resume_id: UUID, background_tasks: BackgroundTas
     background_tasks.add_task(process_resume_background, resume.id, resume.position_id)
     return resume
 
-def get_resumes(db: Session, skip: int = 0, limit: int = 100, candidate_name: str = None, status: str = None, reviewer_id: UUID = None):
+def get_resumes(db: Session, skip: int = 0, limit: int = 100, candidate_name: str = None, status: str = None, position_id: UUID = None, reviewer_id: UUID = None):
     query = db.query(Resume).options(joinedload(Resume.position))
 
     if candidate_name:
@@ -198,13 +198,14 @@ def get_resumes(db: Session, skip: int = 0, limit: int = 100, candidate_name: st
     if status:
         query = query.filter(Resume.status == status)
 
-    # 如果指定了评审人ID，只返回被指派给该评审人的简历
+    if position_id:
+        query = query.filter(Resume.position_id == position_id)
+
     if reviewer_id:
         query = query.join(DepartmentReview, Resume.id == DepartmentReview.resume_id)
         query = query.filter(DepartmentReview.reviewer_id == reviewer_id)
-        query = query.filter(DepartmentReview.is_completed == False)  # 只显示待评审的
+        query = query.filter(DepartmentReview.is_completed == False)
 
-    # Sort by created_at desc
     query = query.order_by(Resume.created_at.desc())
 
     return query.offset(skip).limit(limit).all()

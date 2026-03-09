@@ -235,6 +235,98 @@ class InterviewPanel(Base):
     interview = relationship("Interview", back_populates="panels")
     interviewer_user = relationship("User")
 
+class OfferStatus(str, enum.Enum):
+    DRAFT = "draft"
+    PENDING = "pending"
+    SENT = "sent"
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
+    EXPIRED = "expired"
+    WITHDRAWN = "withdrawn"
+
+class Offer(Base):
+    __tablename__ = "offers"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    resume_id = Column(UUID(as_uuid=True), ForeignKey("resumes.id"), nullable=False)
+    position_id = Column(UUID(as_uuid=True), ForeignKey("positions.id"), nullable=False)
+    candidate_name = Column(String, nullable=False)
+    candidate_email = Column(String, nullable=False)
+    
+    salary_monthly = Column(Float)
+    salary_annual = Column(Float)
+    salary_structure = Column(Text)
+    
+    position_title = Column(String, nullable=False)
+    department = Column(String)
+    report_to = Column(String)
+    
+    work_location = Column(String)
+    work_hours = Column(String)
+    
+    onboard_date = Column(DateTime)
+    probation_months = Column(Integer, default=3)
+    
+    benefits = Column(Text)
+    bonus = Column(Text)
+    
+    special_terms = Column(Text)
+    notes = Column(Text)
+    
+    valid_until = Column(DateTime)
+    status = Column(Enum(OfferStatus), default=OfferStatus.DRAFT)
+    token = Column(String, unique=True, nullable=True)
+    
+    sent_at = Column(DateTime)
+    accepted_at = Column(DateTime)
+    rejected_at = Column(DateTime)
+    rejected_reason = Column(Text)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"))
+    
+    resume = relationship("Resume")
+    position = relationship("Position")
+    creator = relationship("User")
+
+class OfferTemplate(Base):
+    __tablename__ = "offer_templates"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = Column(String, nullable=False)
+    position_id = Column(UUID(as_uuid=True), ForeignKey("positions.id"), nullable=True)
+    
+    salary_monthly = Column(Float)
+    salary_annual = Column(Float)
+    salary_structure = Column(Text)
+    
+    department = Column(String)
+    report_to = Column(String)
+    
+    work_location = Column(String)
+    work_hours = Column(String)
+    
+    probation_months = Column(Integer, default=3)
+    
+    benefits = Column(Text)
+    bonus = Column(Text)
+    
+    special_terms = Column(Text)
+    notes = Column(Text)
+    
+    valid_days = Column(Integer, default=7)
+    
+    is_default = Column(Boolean, default=False)
+    is_active = Column(Boolean, default=True)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"))
+    
+    position = relationship("Position")
+    creator = relationship("User")
+
 class CodingTestStatus(str, enum.Enum):
     DRAFT = "draft"
     PUBLISHED = "published"
@@ -308,4 +400,6 @@ class SystemConfig(Base):
     mail_from = Column(String)  # 发件人邮箱
     mail_from_name = Column(String, default="招聘系统")  # 发件人名称
     mail_enabled = Column(Boolean, default=False)  # 是否启用邮件通知
+    # 前端URL配置（用于生成邮件中的链接）
+    frontend_url = Column(String, default="http://localhost:5173")
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

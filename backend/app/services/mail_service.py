@@ -487,6 +487,61 @@ class MailService:
 
         return result
 
+    def send_offer_email(
+        self,
+        offer,
+        custom_message: str = None,
+        company_name: str = "公司",
+        confirm_url: str = None
+    ) -> bool:
+        """
+        发送Offer邮件
+
+        Args:
+            offer: Offer记录
+            custom_message: 自定义消息
+            company_name: 公司名称
+            confirm_url: 确认链接
+
+        Returns:
+            bool: 发送是否成功
+        """
+        onboard_date_str = offer.onboard_date.strftime('%Y年%m月%d日') if offer.onboard_date else "待定"
+        valid_until_str = offer.valid_until.strftime('%Y年%m月%d日') if offer.valid_until else "长期有效"
+        
+        salary_display = ""
+        if offer.salary_monthly:
+            salary_display = f"月薪：{offer.salary_monthly:,.0f}元"
+            if offer.salary_annual:
+                salary_display += f"（年薪：{offer.salary_annual:,.0f}元）"
+        elif offer.salary_annual:
+            salary_display = f"年薪：{offer.salary_annual:,.0f}元"
+        
+        context = {
+            "candidate_name": offer.candidate_name,
+            "position_title": offer.position_title,
+            "department": offer.department or "",
+            "report_to": offer.report_to or "",
+            "work_location": offer.work_location or "",
+            "work_hours": offer.work_hours or "标准工时",
+            "salary_display": salary_display,
+            "salary_structure": offer.salary_structure or "",
+            "onboard_date": onboard_date_str,
+            "probation_months": offer.probation_months or 3,
+            "benefits": offer.benefits or "按公司标准执行",
+            "bonus": offer.bonus or "",
+            "special_terms": offer.special_terms or "",
+            "valid_until": valid_until_str,
+            "custom_message": custom_message or "",
+            "company_name": company_name,
+            "confirm_url": confirm_url or ""
+        }
+
+        html_content = self._render_template("offer_email.html", context)
+        subject = f"录用通知 - {offer.position_title}"
+
+        return self._send_email(offer.candidate_email, subject, html_content)
+
 
 def get_mail_service(db: Session) -> MailService:
     """获取邮件服务实例"""

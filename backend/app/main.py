@@ -3,7 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import os
 from dotenv import load_dotenv
-from app.routes import auth, positions, question_banks, resumes, interviews, dashboard, coding_tests, settings
+from app.routes import auth, positions, question_banks, resumes, interviews, dashboard, coding_tests, settings, offers, offer_templates
+from app.routes.offers import router as offers_router, public_router as offers_public_router
 from app.config.database import engine, SessionLocal
 from app.models.models import Base, User, UserRole
 from app.core.security import get_password_hash
@@ -73,6 +74,9 @@ app.include_router(dashboard.router, prefix="/api")
 app.include_router(coding_tests.router, prefix="/api")
 app.include_router(coding_tests.public_router, prefix="/api")
 app.include_router(settings.router, prefix="/api")
+app.include_router(offers.router, prefix="/api")
+app.include_router(offers_public_router, prefix="/api")
+app.include_router(offer_templates.router, prefix="/api")
 
 @app.get("/")
 def read_root():

@@ -24,6 +24,7 @@ class MailConfigResponse(BaseModel):
     mail_from: Optional[str] = None
     mail_from_name: Optional[str] = "招聘系统"
     mail_enabled: bool = False
+    frontend_url: Optional[str] = None
 
 
 class MailConfigUpdate(BaseModel):
@@ -35,6 +36,7 @@ class MailConfigUpdate(BaseModel):
     mail_from: Optional[str] = None
     mail_from_name: Optional[str] = None
     mail_enabled: Optional[bool] = None
+    frontend_url: Optional[str] = None
 
 
 class SystemConfigResponse(BaseModel):

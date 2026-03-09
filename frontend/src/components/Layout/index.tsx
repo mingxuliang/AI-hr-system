@@ -10,7 +10,8 @@ import {
   LogoutOutlined,
   BellOutlined,
   SettingOutlined,
-  SolutionOutlined
+  SolutionOutlined,
+  FileAddOutlined
 } from '@ant-design/icons';
 import { useNavigate, useLocation, Outlet } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
@@ -65,6 +66,18 @@ const AppLayout: React.FC = () => {
       key: '/coding-tests',
       icon: <CodeOutlined />,
       label: '笔试管理',
+      roles: ['admin', 'hr'],
+    },
+    {
+      key: '/offers',
+      icon: <FileAddOutlined />,
+      label: 'Offer管理',
+      roles: ['admin', 'hr'],
+    },
+    {
+      key: '/offers/templates',
+      icon: <FileTextOutlined />,
+      label: 'Offer模板',
       roles: ['admin', 'hr'],
     },
     {
