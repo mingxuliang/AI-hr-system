@@ -212,6 +212,45 @@ def generate_interview_evaluation(
         return {"evaluation": "生成评价失败", "suggestion": "waitlist"}
 
 
+def generate_interview_evaluation_from_transcript(
+    transcript: str,
+    interviewer_evaluation: str,
+    interviewer_score: int
+) -> Dict[str, str]:
+    """
+    根据录音转写和面试官评价生成综合评价
+    """
+    prompt_data = prompt_manager.get_prompt(
+        "generate_interview_evaluation_from_transcript",
+        transcript=transcript,
+        interviewer_evaluation=interviewer_evaluation,
+        interviewer_score=interviewer_score
+    )
+    
+    if not prompt_data.get("user"):
+        return {"evaluation": interviewer_evaluation, "suggestion": "waitlist"}
+        
+    try:
+        cfg = _get_llm_config()
+        extra = {"temperature": cfg["llm_temperature"]}
+        if cfg["llm_max_tokens"] is not None:
+            extra["max_tokens"] = cfg["llm_max_tokens"]
+        completion = _get_client().chat.completions.create(
+            model=cfg["llm_model"],
+            messages=[
+                {'role': 'system', 'content': prompt_data['system']},
+                {'role': 'user', 'content': prompt_data['user']}
+            ],
+            response_format={"type": "json_object"},
+            **extra,
+        )
+        result = json.loads(completion.choices[0].message.content)
+        return result
+    except Exception as e:
+        print(f"Evaluation from transcript generation failed: {e}")
+        return {"evaluation": interviewer_evaluation, "suggestion": "waitlist"}
+
+
 def generate_coding_test_evaluation(
     title: str,
     description: str,

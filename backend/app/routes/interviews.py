@@ -8,7 +8,7 @@ from app.services.interview_service import (
     submit_interview_panel_score, aggregate_panel_scores, start_interview, cancel_interview, get_submission_status
 )
 from app.schemas.interview import InterviewResponse, InterviewCreate, InterviewUpdate, InterviewScore, InterviewPanelResponse
-from app.models.models import User, UserRole, Resume, Position, InterviewStatus, InterviewResult
+from app.models.models import User, UserRole, Resume, Position, InterviewStatus, InterviewResult, InterviewPanel
 from app.routes.auth import get_current_user
 from app.core.security import check_roles
 
@@ -50,33 +50,22 @@ def submit_panel_score_route(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    # Submit individual score
-    # Check if this triggers auto-aggregation
-    panel = submit_interview_panel_score(db, interview_id, current_user.id, score_data)
+    panel, all_submitted = submit_interview_panel_score(db, interview_id, current_user.id, score_data)
     
-    # Check if we should aggregate
-    # This logic was partially in submit_interview_panel_score but that function didn't have background_tasks
-    # So we do a check here or move the logic fully here
-    # Let's check if all submitted
+    if not panel:
+        raise HTTPException(status_code=404, detail="Interview not found")
+    
     from app.models.models import Interview, InterviewPanel
     
     db_interview = db.query(Interview).get(interview_id)
-    if db_interview and db_interview.panel_members:
-        submitted_panels = db.query(InterviewPanel).filter(
-            InterviewPanel.interview_id == interview_id,
-            InterviewPanel.is_submitted == True
-        ).all()
-        submitted_ids = [str(p.interviewer_id) for p in submitted_panels]
-        required_ids = [str(uid) for uid in db_interview.panel_members]
-        
-        print(f"Auto-Aggregation Debug: Submitted={submitted_ids}, Required={required_ids}")
-        
-        if all(uid in submitted_ids for uid in required_ids):
-             print(f"All panel members submitted. Triggering aggregation for interview {interview_id}")
-             # Auto aggregate
-             aggregate_panel_scores(db, interview_id, background_tasks)
-             # Update status in response object (not DB object, as panel is different model)
-             panel.interview_status = "completed"
+    
+    if all_submitted and db_interview:
+        print(f"All panel members submitted. Triggering aggregation for interview {interview_id}")
+        aggregate_panel_scores(db, interview_id, background_tasks)
+        panel.interview_status = "analyzing"
+    else:
+        if db_interview:
+            panel.interview_status = db_interview.status.value
              
     return panel
 
@@ -261,6 +250,19 @@ def get_interview_route(interview_id: UUID, db: Session = Depends(get_db)):
     interview = get_interview(db, interview_id)
     if not interview:
         raise HTTPException(status_code=404, detail="Interview not found")
+    
+    print(f"[Get Interview] interview_id: {interview_id}")
+    print(f"[Get Interview] panel_members: {interview.panel_members}")
+    print(f"[Get Interview] panel_members type: {type(interview.panel_members)}")
+    if interview.panel_members:
+        for i, member in enumerate(interview.panel_members):
+            print(f"[Get Interview] member[{i}]: {member}, type: {type(member)}")
+    
+    print(f"[Get Interview] panels count: {len(interview.panels) if interview.panels else 0}")
+    if interview.panels:
+        for p in interview.panels:
+            print(f"[Get Interview] panel: interviewer_id={p.interviewer_id}, is_submitted={p.is_submitted}")
+    
     return interview
 
 @router.post("/{interview_id}/start", response_model=InterviewResponse)
@@ -285,8 +287,14 @@ def update_interview_route(interview_id: UUID, interview: InterviewUpdate, db: S
     return db_interview
 
 @router.post("/{interview_id}/score", response_model=InterviewResponse)
-def submit_score_route(interview_id: UUID, score_data: InterviewScore, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
-    db_interview = submit_interview_score(db, interview_id, score_data, background_tasks)
+def submit_score_route(
+    interview_id: UUID, 
+    score_data: InterviewScore, 
+    background_tasks: BackgroundTasks, 
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    db_interview = submit_interview_score(db, interview_id, current_user.id, score_data, background_tasks)
     if not db_interview:
         raise HTTPException(status_code=404, detail="Interview not found")
     return db_interview
@@ -553,38 +561,102 @@ def submit_direct_evaluation(
     if not interview:
         raise HTTPException(status_code=404, detail="Interview not found")
 
-    # 检查是否有录音转写内容
     transcripts = interview.transcripts or {}
     full_transcript = transcripts.get("full_interview") or evaluation_data.transcript
 
-    if full_transcript:
-        # 有录音转写内容，后台结合面试官评价生成综合评价
-        background_tasks.add_task(
-            generate_combined_evaluation,
-            interview_id,
-            full_transcript,
-            evaluation_data.evaluation,
-            evaluation_data.suggestion,
-            evaluation_data.score
-        )
-        # 先保存面试官的评价
-        interview.evaluation = evaluation_data.evaluation
-        interview.suggestion = evaluation_data.suggestion
-        interview.total_score = evaluation_data.score
-        interview.scores = {"overall": evaluation_data.score}
-        interview.comments = {"overall": evaluation_data.evaluation, "interviewer_evaluation": evaluation_data.evaluation}
+    panel_members = interview.panel_members or []
+    is_multi_interviewer = len(panel_members) > 1
+
+    if is_multi_interviewer:
+        panel = db.query(InterviewPanel).filter(
+            InterviewPanel.interview_id == interview_id,
+            InterviewPanel.interviewer_id == current_user.id
+        ).first()
+        
+        if panel:
+            panel.scores = {"overall": evaluation_data.score}
+            panel.comments = {"overall": evaluation_data.evaluation}
+            panel.total_score = evaluation_data.score
+            panel.is_submitted = True
+            db.commit()
+            db.refresh(panel)
+        
+        submitted_panels = db.query(InterviewPanel).filter(
+            InterviewPanel.interview_id == interview_id,
+            InterviewPanel.is_submitted == True
+        ).all()
+        
+        submitted_ids = [str(p.interviewer_id) for p in submitted_panels]
+        required_ids = [str(uid) for uid in panel_members]
+        
+        print(f"[Direct Eval] Submitted IDs: {submitted_ids}")
+        print(f"[Direct Eval] Required IDs: {required_ids}")
+        
+        all_submitted = all(uid in submitted_ids for uid in required_ids)
+        print(f"[Direct Eval] All submitted: {all_submitted}")
+        
+        if all_submitted:
+            interview.status = InterviewStatus.ANALYZING
+            interview.result = InterviewResult.PENDING
+            
+            all_evaluations = []
+            for p in submitted_panels:
+                interviewer_name = p.interviewer_user.full_name if p.interviewer_user else str(p.interviewer_id)
+                all_evaluations.append(f"**{interviewer_name}**: {p.comments.get('overall', '')} (评分: {p.total_score})")
+            
+            combined_evaluation = "\n\n".join(all_evaluations)
+            avg_score = sum(p.total_score or 0 for p in submitted_panels) // len(submitted_panels)
+            
+            interview.evaluation = combined_evaluation
+            interview.suggestion = "综合多位面试官评价"
+            interview.total_score = avg_score
+            interview.scores = {"overall": avg_score}
+            interview.comments = {"overall": combined_evaluation}
+            
+            db.commit()
+            db.refresh(interview)
+            
+            if full_transcript:
+                background_tasks.add_task(
+                    generate_combined_evaluation,
+                    interview_id,
+                    full_transcript,
+                    combined_evaluation,
+                    "综合多位面试官评价",
+                    avg_score
+                )
+            else:
+                interview.status = InterviewStatus.COMPLETED
+                db.commit()
+                db.refresh(interview)
+        else:
+            interview.result = InterviewResult.PENDING
+            db.commit()
+            db.refresh(interview)
     else:
-        # 没有录音，直接保存评价
         interview.evaluation = evaluation_data.evaluation
         interview.suggestion = evaluation_data.suggestion
         interview.total_score = evaluation_data.score
         interview.scores = {"overall": evaluation_data.score}
         interview.comments = {"overall": evaluation_data.evaluation}
-        interview.status = InterviewStatus.COMPLETED
-        interview.result = InterviewResult.PENDING
 
-    db.commit()
-    db.refresh(interview)
+        if full_transcript:
+            interview.status = InterviewStatus.ANALYZING
+            interview.result = InterviewResult.PENDING
+            background_tasks.add_task(
+                generate_combined_evaluation,
+                interview_id,
+                full_transcript,
+                evaluation_data.evaluation,
+                evaluation_data.suggestion,
+                evaluation_data.score
+            )
+        else:
+            interview.status = InterviewStatus.COMPLETED
+            interview.result = InterviewResult.PENDING
+
+        db.commit()
+        db.refresh(interview)
 
     return interview
 
@@ -607,7 +679,6 @@ def submit_direct_evaluation_with_audio(
     if not interview:
         raise HTTPException(status_code=404, detail="Interview not found")
 
-    # 保存音频文件
     upload_dir = f"uploads/full_audio/{interview_id}"
     os.makedirs(upload_dir, exist_ok=True)
 
@@ -618,35 +689,109 @@ def submit_direct_evaluation_with_audio(
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
-    # 转写音频
     try:
         transcript = transcribe_audio(file_path)
     except Exception as e:
         transcript = f"转写失败: {str(e)}"
 
-    # 保存到数据库
     interview.audio_records = {"full_interview": file_path}
     interview.transcripts = {"full_interview": transcript}
-    interview.comments = {"overall": evaluation, "interviewer_evaluation": evaluation}
 
-    # 后台结合录音和评价生成综合评价
-    if transcript:
-        background_tasks.add_task(
-            generate_combined_evaluation,
-            interview_id,
-            transcript,
-            evaluation,
-            suggestion,
-            score
-        )
+    panel_members = interview.panel_members or []
+    is_multi_interviewer = len(panel_members) > 1
 
-    db.commit()
-    db.refresh(interview)
+    if is_multi_interviewer:
+        panel = db.query(InterviewPanel).filter(
+            InterviewPanel.interview_id == interview_id,
+            InterviewPanel.interviewer_id == current_user.id
+        ).first()
+        
+        if panel:
+            panel.scores = {"overall": score}
+            panel.comments = {"overall": evaluation}
+            panel.total_score = score
+            panel.is_submitted = True
+            db.commit()
+            db.refresh(panel)
+        
+        submitted_panels = db.query(InterviewPanel).filter(
+            InterviewPanel.interview_id == interview_id,
+            InterviewPanel.is_submitted == True
+        ).all()
+        
+        submitted_ids = [str(p.interviewer_id) for p in submitted_panels]
+        required_ids = [str(uid) for uid in panel_members]
+        
+        print(f"[Direct Eval Audio] Submitted IDs: {submitted_ids}")
+        print(f"[Direct Eval Audio] Required IDs: {required_ids}")
+        
+        all_submitted = all(uid in submitted_ids for uid in required_ids)
+        print(f"[Direct Eval Audio] All submitted: {all_submitted}")
+        
+        if all_submitted:
+            interview.status = InterviewStatus.ANALYZING
+            interview.result = InterviewResult.PENDING
+            
+            all_evaluations = []
+            for p in submitted_panels:
+                interviewer_name = p.interviewer_user.full_name if p.interviewer_user else str(p.interviewer_id)
+                all_evaluations.append(f"**{interviewer_name}**: {p.comments.get('overall', '')} (评分: {p.total_score})")
+            
+            combined_evaluation = "\n\n".join(all_evaluations)
+            avg_score = sum(p.total_score or 0 for p in submitted_panels) // len(submitted_panels)
+            
+            interview.evaluation = combined_evaluation
+            interview.suggestion = "综合多位面试官评价"
+            interview.total_score = avg_score
+            interview.scores = {"overall": avg_score}
+            interview.comments = {"overall": combined_evaluation}
+            
+            db.commit()
+            db.refresh(interview)
+            
+            if transcript:
+                background_tasks.add_task(
+                    generate_combined_evaluation,
+                    interview_id,
+                    transcript,
+                    combined_evaluation,
+                    "综合多位面试官评价",
+                    avg_score
+                )
+            else:
+                interview.status = InterviewStatus.COMPLETED
+                db.commit()
+                db.refresh(interview)
+        else:
+            interview.result = InterviewResult.PENDING
+            db.commit()
+            db.refresh(interview)
+    else:
+        interview.evaluation = evaluation
+        interview.suggestion = suggestion
+        interview.total_score = score
+        interview.scores = {"overall": score}
+        interview.comments = {"overall": evaluation}
 
-    return {
-        "message": "上传成功",
-        "transcript": transcript
-    }
+        if transcript:
+            interview.status = InterviewStatus.ANALYZING
+            interview.result = InterviewResult.PENDING
+            background_tasks.add_task(
+                generate_combined_evaluation,
+                interview_id,
+                transcript,
+                evaluation,
+                suggestion,
+                score
+            )
+        else:
+            interview.status = InterviewStatus.COMPLETED
+            interview.result = InterviewResult.PENDING
+
+        db.commit()
+        db.refresh(interview)
+
+    return interview
 
 
 def generate_evaluation_from_transcript(interview_id: UUID, transcript: str):

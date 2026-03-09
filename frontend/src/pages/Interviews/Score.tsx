@@ -76,6 +76,44 @@ const InterviewScore: React.FC = () => {
     return () => document.removeEventListener('fullscreenchange', onChange);
   }, []);
 
+  useEffect(() => {
+    if (!id || !interview) return;
+    
+    if (interview.status === 'completed') {
+      navigate(`/interviews/${id}/result`);
+      return;
+    }
+    
+    const panelMembers = interview?.panel_members || [];
+    const isMultiInterviewer = panelMembers.length > 1;
+    const userIdStr = String(user?.id);
+    const myPanel = interview.panels?.find((p: any) => String(p.interviewer_id) === userIdStr);
+    
+    const shouldPoll = 
+      interview.status === 'analyzing' ||
+      (isMultiInterviewer && myPanel?.is_submitted) ||
+      (!isMultiInterviewer && interview.status === 'in_progress' && interview.scores && Object.keys(interview.scores).length > 0);
+    
+    if (shouldPoll) {
+      const interval = setInterval(async () => {
+        try {
+          const res = await request.get(`/interviews/${id}`) as any;
+          setInterview(res);
+          fetchSubmissionStatus(id);
+          
+          if (res.status === 'completed') {
+            clearInterval(interval);
+            navigate(`/interviews/${id}/result`);
+          }
+        } catch (error) {
+          console.error('Polling error:', error);
+        }
+      }, 3000);
+      
+      return () => clearInterval(interval);
+    }
+  }, [id, interview?.status, interview?.panels]);
+
   const toggleFullscreen = async () => {
     try {
       if (!document.fullscreenElement) {
@@ -95,15 +133,15 @@ const InterviewScore: React.FC = () => {
     try {
       const res = await request.get(`/interviews/${interviewId}`) as any;
 
-      // Check if already evaluated (main result)
-      if (res.evaluation || (res.result === 'pending' && res.scores && Object.keys(res.scores).length > 0)) {
-          // Check if current user has submitted panel score
-          // If so, maybe redirect? Or allow viewing?
-          // For now, let's keep logic simple: if main result exists, redirect to result page.
-          if (res.status === 'completed') {
-             navigate(`/interviews/${interviewId}/result`);
-             return;
-          }
+      if (res.status === 'completed') {
+         navigate(`/interviews/${interviewId}/result`);
+         return;
+      }
+
+      if (res.status === 'analyzing') {
+         setInterview(res);
+         setQuestions(res.questions || []);
+         return;
       }
 
       setInterview(res);
@@ -163,32 +201,6 @@ const InterviewScore: React.FC = () => {
       setCancelling(false);
     }
   };
-
-  // Poll for collaboration data
-  useEffect(() => {
-    let interval: any;
-
-    // Check status immediately
-    if (interview && interview.status === 'completed' && interview.evaluation) {
-         navigate(`/interviews/${id}/result`);
-         return;
-    }
-
-    // Poll regardless of showOtherScores if we are waiting for completion
-    // Or just make it simple: always poll every 5s if not completed
-    if (id && (!interview || interview.status !== 'completed')) {
-        // Initial fetch
-        if (!interview) fetchInterview(id, true);
-
-        interval = setInterval(() => {
-            fetchInterview(id, true);
-            fetchSubmissionStatus(id);
-        }, 5000);
-    }
-    return () => {
-        if (interval) clearInterval(interval);
-    };
-  }, [id, interview?.status]);
 
   const startRecording = async () => {
     try {
@@ -411,7 +423,9 @@ const InterviewScore: React.FC = () => {
 
     setSubmittingDirect(true);
     try {
-      // 如果有录音未上传，先上传录音
+      const panelMembers = interview?.panel_members || [];
+      const isMultiInterviewer = panelMembers.length > 1;
+      
       if (fullRecordingBlob && !fullTranscript) {
         setUploadingRecording(true);
         const formData = new FormData();
@@ -424,22 +438,50 @@ const InterviewScore: React.FC = () => {
           headers: { 'Content-Type': 'multipart/form-data' }
         });
 
-        if (response.transcript) {
-          setFullTranscript(response.transcript);
+        setInterview(response);
+        
+        if (isMultiInterviewer) {
+          const updatedInterview = await request.get(`/interviews/${id}`) as any;
+          setInterview(updatedInterview);
+          
+          const allSubmitted = panelMembers.every((memberId: string) => 
+            updatedInterview.panels?.some((p: any) => String(p.interviewer_id) === String(memberId) && p.is_submitted)
+          );
+          
+          if (allSubmitted) {
+            message.success('所有面试官已提交，AI正在综合分析...');
+          } else {
+            message.success('评价已提交，等待其他面试官...');
+          }
+        } else {
+          message.success('评价和录音已提交，AI正在综合分析...');
         }
-        message.success('评价和录音已提交，AI正在综合分析...');
       } else {
-        // 只有评价或已有录音转写
-        await request.post(`/interviews/${id}/direct-evaluation`, {
+        const res = await request.post(`/interviews/${id}/direct-evaluation`, {
           evaluation: directEvaluation,
           suggestion: directSuggestion,
           score: directScore,
-          transcript: fullTranscript || null  // 如果有转写内容也一起提交
+          transcript: fullTranscript || null
         });
-        message.success('评价已提交');
+        setInterview(res);
+        
+        if (isMultiInterviewer) {
+          const updatedInterview = await request.get(`/interviews/${id}`) as any;
+          setInterview(updatedInterview);
+          
+          const allSubmitted = panelMembers.every((memberId: string) => 
+            updatedInterview.panels?.some((p: any) => String(p.interviewer_id) === String(memberId) && p.is_submitted)
+          );
+          
+          if (allSubmitted) {
+            message.success('所有面试官已提交，AI正在综合分析...');
+          } else {
+            message.success('评价已提交，等待其他面试官...');
+          }
+        } else {
+          message.success('评价已提交');
+        }
       }
-
-      if (id) fetchInterview(id, true);
     } catch (error) {
       message.error('提交评价失败');
     } finally {
@@ -464,28 +506,48 @@ const InterviewScore: React.FC = () => {
 
     try {
       setSubmitting(true);
-      await request.post(`/interviews/${id}/score`, {
-        scores,
-        comments 
-      }) as any;
-      message.success('评分已提交，正在生成报告...');
       
-      if (id) {
-        let attempts = 0;
-        const maxAttempts = 10;
-        const checkStatus = async () => {
-          attempts++;
-          const res = await request.get(`/interviews/${id}`) as any;
-          if (res.status === 'completed') {
-            navigate(`/interviews/${id}/result`);
-          } else if (attempts < maxAttempts) {
-            setTimeout(checkStatus, 1000);
-          } else {
-            message.info('报告生成中，请稍后刷新查看');
-            navigate('/interviews');
-          }
-        };
-        setTimeout(checkStatus, 2000);
+      const panelMembers = interview?.panel_members || [];
+      const isMultiInterviewer = panelMembers.length > 1;
+      
+      console.log('[Submit Score] panelMembers:', panelMembers);
+      console.log('[Submit Score] isMultiInterviewer:', isMultiInterviewer);
+      
+      if (isMultiInterviewer) {
+        await request.post(`/interviews/${id}/panel-score`, {
+          scores,
+          comments 
+        }) as any;
+        
+        const updatedInterview = await request.get(`/interviews/${id}`) as any;
+        console.log('[Submit Score] updatedInterview:', updatedInterview);
+        console.log('[Submit Score] panels:', updatedInterview.panels);
+        setInterview(updatedInterview);
+        
+        const allSubmitted = panelMembers.every((memberId: string) => {
+          const found = updatedInterview.panels?.some((p: any) => {
+            const match = String(p.interviewer_id) === String(memberId) && p.is_submitted;
+            console.log(`[Submit Score] Checking memberId=${memberId}, panel.interviewer_id=${p.interviewer_id}, is_submitted=${p.is_submitted}, match=${match}`);
+            return match;
+          });
+          return found;
+        });
+        
+        console.log('[Submit Score] allSubmitted:', allSubmitted);
+        
+        if (allSubmitted) {
+          message.success('所有面试官已提交，AI正在分析...');
+        } else {
+          message.success('评分已提交，等待其他面试官...');
+        }
+      } else {
+        const res = await request.post(`/interviews/${id}/score`, {
+          scores,
+          comments 
+        }) as any;
+        
+        setInterview(res);
+        message.success('评分已提交，AI正在分析...');
       }
       
     } catch (error) {
@@ -524,10 +586,8 @@ const InterviewScore: React.FC = () => {
 
   const currentQuestion = questions[currentQuestionIndex];
 
-  // 先检查 interview 是否存在
   if (!interview) return null;
 
-  // AI正在生成题目（questions 为 null 或 undefined 表示正在生成）
   if (interview.questions === null || interview.questions === undefined) {
       return (
         <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
@@ -538,7 +598,77 @@ const InterviewScore: React.FC = () => {
       );
   }
 
-  // 检查是否跳过了AI生成题目（questions 为空数组）
+  const panelMembers = interview?.panel_members || [];
+  const isMultiInterviewer = panelMembers.length > 1;
+  
+  console.log('[Score Render] interview status:', interview.status);
+  console.log('[Score Render] panelMembers:', panelMembers);
+  console.log('[Score Render] panels:', interview.panels);
+  console.log('[Score Render] user?.id:', user?.id);
+  
+  if (isMultiInterviewer && interview.panels) {
+    const userIdStr = String(user?.id);
+    console.log('[Score Render] userIdStr:', userIdStr);
+    
+    const myPanel = interview.panels.find((p: any) => {
+      const match = String(p.interviewer_id) === userIdStr;
+      console.log(`[Score Render] Checking panel: interviewer_id=${p.interviewer_id}, is_submitted=${p.is_submitted}, match=${match}`);
+      return match;
+    });
+    console.log('[Score Render] myPanel:', myPanel);
+    
+    const allSubmitted = panelMembers.every((memberId: string) => {
+      const found = interview.panels?.some((p: any) => {
+        const match = String(p.interviewer_id) === String(memberId) && p.is_submitted;
+        console.log(`[Score Render] allSubmitted check: memberId=${memberId}, panel.interviewer_id=${p.interviewer_id}, is_submitted=${p.is_submitted}, match=${match}`);
+        return match;
+      });
+      console.log(`[Score Render] memberId=${memberId} found=${found}`);
+      return found;
+    });
+    console.log('[Score Render] allSubmitted:', allSubmitted);
+    
+    if (myPanel?.is_submitted && !allSubmitted) {
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+            <CheckCircleOutlined style={{ fontSize: 64, color: '#52c41a', marginBottom: 24 }} />
+            <Title level={4} style={{ color: '#64748B' }}>评分已提交</Title>
+            <Text type="secondary">等待其他面试官提交评分...</Text>
+            <div style={{ marginTop: 24 }}>
+              <Space direction="vertical" size="small">
+                {panelMembers.map((memberId: string) => {
+                  const panel = interview.panels?.find((p: any) => String(p.interviewer_id) === String(memberId));
+                  const isMe = String(memberId) === String(user?.id);
+                  return (
+                    <Tag key={memberId} color={panel?.is_submitted ? 'success' : 'processing'}>
+                      {isMe ? '我' : `面试官 ${String(memberId).slice(0, 8)}`}
+                      {panel?.is_submitted ? ' - 已提交' : ' - 待提交'}
+                    </Tag>
+                  );
+                })}
+              </Space>
+            </div>
+            <div style={{ marginTop: 24 }}>
+              <Button onClick={() => navigate('/interviews')}>返回列表</Button>
+            </div>
+        </div>
+      );
+    }
+  }
+
+  if (interview.status === 'analyzing') {
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+            <Spin size="large" />
+            <Title level={4} style={{ marginTop: 24, color: '#64748B' }}>AI 正在分析面试结果，请稍候...</Title>
+            <Text type="secondary">正在根据评分生成综合评价报告</Text>
+            <div style={{ marginTop: 24 }}>
+              <Button onClick={() => navigate('/interviews')}>返回列表</Button>
+            </div>
+        </div>
+      );
+  }
+
   const skippedAiQuestions = interview.questions.length === 0;
 
   const questionFormContent = (
@@ -755,25 +885,48 @@ const InterviewScore: React.FC = () => {
                     <Title level={5}>录制整场面试</Title>
                     <Text type="secondary" style={{ fontSize: 12 }}>录音后由AI自动分析生成评价</Text>
                     <div style={{ marginTop: 12 }}>
-                      {fullRecording ? (
-                        <Space direction="vertical" size="small">
-                          <Text type="danger" strong>录制中: {formatTime(fullRecordingTime)}</Text>
-                          <Button type="primary" danger size="small" onClick={stopFullRecording}>
-                            停止录制
+                      {(() => {
+                        const panelMembers = interview?.panel_members || [];
+                        const isFirstInterviewer = panelMembers.length > 0 && user?.id && panelMembers[0] === user.id;
+                        
+                        if (!isFirstInterviewer && panelMembers.length > 0) {
+                          return (
+                            <Tooltip title="仅首位面试官可进行录音">
+                              <Button type="default" size="small" disabled>
+                                开始录制
+                              </Button>
+                            </Tooltip>
+                          );
+                        }
+                        
+                        if (fullRecording) {
+                          return (
+                            <Space direction="vertical" size="small">
+                              <Text type="danger" strong>录制中: {formatTime(fullRecordingTime)}</Text>
+                              <Button type="primary" danger size="small" onClick={stopFullRecording}>
+                                停止录制
+                              </Button>
+                            </Space>
+                          );
+                        }
+                        
+                        if (fullRecordingBlob) {
+                          return (
+                            <Space direction="vertical" size="small">
+                              <Text type="success">录音已完成 ({formatTime(fullRecordingTime)})</Text>
+                              <Button type="primary" size="small" loading={uploadingRecording} onClick={uploadFullRecording}>
+                                上传并分析
+                              </Button>
+                            </Space>
+                          );
+                        }
+                        
+                        return (
+                          <Button type="default" size="small" onClick={startFullRecording}>
+                            开始录制
                           </Button>
-                        </Space>
-                      ) : fullRecordingBlob ? (
-                        <Space direction="vertical" size="small">
-                          <Text type="success">录音已完成 ({formatTime(fullRecordingTime)})</Text>
-                          <Button type="primary" size="small" loading={uploadingRecording} onClick={uploadFullRecording}>
-                            上传并分析
-                          </Button>
-                        </Space>
-                      ) : (
-                        <Button type="default" size="small" onClick={startFullRecording}>
-                          开始录制
-                        </Button>
-                      )}
+                        );
+                      })()}
                     </div>
                     {fullTranscript && (
                       <div style={{ marginTop: 12, textAlign: 'left', maxHeight: 100, overflow: 'auto', background: '#f5f5f5', padding: 8, borderRadius: 4 }}>

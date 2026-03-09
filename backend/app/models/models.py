@@ -185,6 +185,7 @@ class InterviewResult(str, enum.Enum):
 class InterviewStatus(str, enum.Enum):
     SCHEDULED = "scheduled"
     IN_PROGRESS = "in_progress"
+    ANALYZING = "analyzing"
     COMPLETED = "completed"
     CANCELLED = "cancelled"
 

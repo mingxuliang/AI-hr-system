@@ -284,6 +284,24 @@ class MailService:
                 "result_text_color": "#155724",
                 "is_passed": True
             },
+            InterviewResult.HIRED: {
+                "header_gradient": "#28a745 0%, #20c997 100%",
+                "result_title": "录用通知",
+                "result_text": "恭喜您已被录用！",
+                "result_bg_color": "#d4edda",
+                "result_border_color": "#28a745",
+                "result_text_color": "#155724",
+                "is_passed": True
+            },
+            InterviewResult.NEXT_ROUND: {
+                "header_gradient": "#28a745 0%, #20c997 100%",
+                "result_title": "通过此轮面试",
+                "result_text": "恭喜您通过此轮面试，将进入下一轮！",
+                "result_bg_color": "#d4edda",
+                "result_border_color": "#28a745",
+                "result_text_color": "#155724",
+                "is_passed": True
+            },
             InterviewResult.REJECTED: {
                 "header_gradient": "#dc3545 0%, #c82333 100%",
                 "result_title": "面试结果通知",

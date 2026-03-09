@@ -128,6 +128,32 @@ prompts:
       - evaluation: 综合评价内容 (Markdown 格式，包含 '### 🌟 综合表现'、'### 💬 回答质量点评'、'### ✅ 优势'、'### ⚠️ 不足' 四个部分)
       - suggestion: 录用建议 (passed/rejected/waitlist)
 
+  generate_interview_evaluation_from_transcript:
+    system: "你是一个资深的面试官，正在进行面试复盘和综合评估。"
+    user: |
+      请根据以下面试录音转写内容和面试官评价，生成一份专业的面试综合评价报告。
+      
+      ### 1. 面试录音转写
+      {transcript}
+      
+      ### 2. 面试官评价
+      {interviewer_evaluation}
+      
+      ### 3. 面试官评分
+      {interviewer_score} 分 (满分10分)
+      
+      请综合分析候选人在面试中的表现，结合面试官的评价，生成一份客观、全面的评价报告。
+      
+      **要求**：
+      1. **综合分析**：根据对话内容分析候选人的技术能力、沟通能力、逻辑思维等。
+      2. **回答质量评估**：点评候选人回答问题的逻辑性、准确性和完整性。
+      3. **优缺点总结**：明确列出候选人的主要优势和待改进之处。
+      4. **最终建议**：给出明确的录用建议。
+      
+      请返回 JSON 格式，包含:
+      - evaluation: 综合评价内容 (Markdown 格式，包含 '### 🌟 综合表现'、'### 💬 回答质量点评'、'### ✅ 优势'、'### ⚠️ 不足' 四个部分)
+      - suggestion: 录用建议 (passed/rejected/waitlist)
+
   generate_coding_test_evaluation:
     system: "你是一个资深算法面试官，擅长评估候选人代码质量与算法能力。"
     user: |

@@ -31,13 +31,19 @@ def start_interview(db: Session, interview_id: UUID):
 def submit_interview_panel_score(db: Session, interview_id: UUID, interviewer_id: UUID, score_data: InterviewScore):
     """
     Submit score for a specific interviewer (panel member).
-    在第一次提交评分时，将面试状态改为 IN_PROGRESS。
+    统一的评分提交入口，单面试官和多面试官都使用此函数。
     """
-    # 首先检查面试状态，如果还是 SCHEDULED，则改为 IN_PROGRESS
     db_interview = db.query(Interview).get(interview_id)
-    if db_interview and db_interview.status == InterviewStatus.SCHEDULED:
+    if not db_interview:
+        return None, False
+
+    if db_interview.status == InterviewStatus.SCHEDULED:
         db_interview.status = InterviewStatus.IN_PROGRESS
         print(f"Interview {interview_id} status auto-changed to IN_PROGRESS on first score submission")
+        db.commit()
+
+    if not db_interview.panel_members or len(db_interview.panel_members) == 0:
+        db_interview.panel_members = [str(interviewer_id)]
         db.commit()
 
     panel = db.query(InterviewPanel).filter(
@@ -45,32 +51,30 @@ def submit_interview_panel_score(db: Session, interview_id: UUID, interviewer_id
         InterviewPanel.interviewer_id == interviewer_id
     ).first()
 
+    avg_score = sum(score_data.scores.values()) // len(score_data.scores) if score_data.scores else 0
+
     if not panel:
-        # Create new panel entry if not exists (should usually exist if assigned, but for safety)
         panel = InterviewPanel(
             interview_id=interview_id,
             interviewer_id=interviewer_id,
             scores=score_data.scores,
             comments=score_data.comments,
-            total_score=sum(score_data.scores.values()) // len(score_data.scores) if score_data.scores else 0,
+            total_score=avg_score,
             is_submitted=True
         )
         db.add(panel)
     else:
         panel.scores = score_data.scores
         panel.comments = score_data.comments
-        panel.total_score = sum(score_data.scores.values()) // len(score_data.scores) if score_data.scores else 0
+        panel.total_score = avg_score
         panel.is_submitted = True
 
     db.commit()
     db.refresh(panel)
     
-    # Check if all panels submitted? Maybe update main interview status?
-    # For now, we just save the panel score.
-    # Check if all designated panel members have submitted
     db_interview = db.query(Interview).get(interview_id)
+    all_submitted = False
     if db_interview and db_interview.panel_members:
-        # Get all submitted panels
         submitted_panels = db.query(InterviewPanel).filter(
             InterviewPanel.interview_id == interview_id,
             InterviewPanel.is_submitted == True
@@ -79,18 +83,13 @@ def submit_interview_panel_score(db: Session, interview_id: UUID, interviewer_id
         submitted_interviewer_ids = [str(p.interviewer_id) for p in submitted_panels]
         required_interviewer_ids = [str(uid) for uid in db_interview.panel_members]
         
-        # Check if all required interviewers have submitted
-        all_submitted = all(uid in submitted_interviewer_ids for uid in required_interviewer_ids)
+        print(f"[Panel Score] Submitted IDs: {submitted_interviewer_ids}")
+        print(f"[Panel Score] Required IDs: {required_interviewer_ids}")
         
-        if all_submitted:
-            # Trigger aggregation automatically
-            # We need background_tasks here, but this function doesn't have it in signature yet.
-            # We will refactor the route to call aggregate directly or pass background_tasks here.
-            # For now, let's just mark it as potentially ready.
-            # Actually, let's return a flag or handle it in the route.
-            pass
+        all_submitted = all(uid in submitted_interviewer_ids for uid in required_interviewer_ids)
+        print(f"[Panel Score] All submitted: {all_submitted}")
 
-    return panel
+    return panel, all_submitted
 
 def get_interview_panels(db: Session, interview_id: UUID):
     return db.query(InterviewPanel).filter(InterviewPanel.interview_id == interview_id).all()
@@ -183,13 +182,10 @@ def aggregate_panel_scores(db: Session, interview_id: UUID, background_tasks: Ba
             }
         )
 
-        # 状态已经是 IN_PROGRESS（因为有人提交了评分）
-        # 后台任务完成后会将状态改为 COMPLETED
-        # 这里不需要手动改状态，让后台任务处理
-
+        db_interview.status = InterviewStatus.ANALYZING
         db.commit()
         db.refresh(db_interview)
-        print(f"Panel scores aggregated for interview {interview_id}, AI evaluation triggered")
+        print(f"Panel scores aggregated for interview {interview_id}, status changed to ANALYZING")
         return db_interview
     return None
 from fastapi import HTTPException
@@ -286,7 +282,21 @@ def create_interview(db: Session, interview: InterviewCreate, background_tasks: 
     db.commit()
     db.refresh(db_interview)
 
-    # Add background task to generate questions (unless skipped)
+    if interview.panel_members:
+        for interviewer_id in interview.panel_members:
+            try:
+                interviewer_uuid = UUID(interviewer_id) if isinstance(interviewer_id, str) else interviewer_id
+            except (ValueError, TypeError):
+                print(f"Invalid interviewer_id: {interviewer_id}")
+                continue
+            panel = InterviewPanel(
+                interview_id=db_interview.id,
+                interviewer_id=interviewer_uuid,
+                is_submitted=False
+            )
+            db.add(panel)
+        db.commit()
+
     if not interview.skip_ai_questions:
         background_tasks.add_task(
             generate_questions_background,
@@ -296,7 +306,6 @@ def create_interview(db: Session, interview: InterviewCreate, background_tasks: 
             interview_category
         )
 
-    # Add background task to send invitation email (unless skipped)
     if not interview.skip_email:
         background_tasks.add_task(
             send_interview_invitation_background,
@@ -530,13 +539,16 @@ def generate_evaluation_background(interview_id: UUID, score_data: dict):
         db_interview = db.query(Interview).filter(Interview.id == interview_id).first()
         if not db_interview:
             return
+        
+        if db_interview.status != InterviewStatus.ANALYZING:
+            db_interview.status = InterviewStatus.ANALYZING
+            db.commit()
             
         scores = score_data.get('scores', {})
         panel_details = score_data.get('panel_details', "")
         transcripts = score_data.get('transcripts', "")
         
         if not scores:
-            print(f"No scores provided for evaluation {interview_id}")
             db_interview.status = InterviewStatus.COMPLETED
             db_interview.result = InterviewResult.PENDING
             db.commit()
@@ -568,7 +580,6 @@ def generate_evaluation_background(interview_id: UUID, score_data: dict):
         db_interview.status = InterviewStatus.COMPLETED
         
         db.commit()
-        print(f"Evaluation generated and status updated to COMPLETED for interview {interview_id}")
         
     except Exception as e:
         print(f"Error generating evaluation for interview {interview_id}: {e}")
@@ -582,6 +593,54 @@ def generate_evaluation_background(interview_id: UUID, score_data: dict):
             pass
     finally:
         db.close()
+
+
+def generate_combined_evaluation(interview_id: UUID, transcript: str, interviewer_evaluation: str, interviewer_suggestion: str, interviewer_score: int):
+    """
+    后台任务：结合录音转写和面试官评价生成综合评价
+    """
+    from app.services.ai_service import generate_interview_evaluation_from_transcript
+    
+    db = SessionLocal()
+    try:
+        db_interview = db.query(Interview).filter(Interview.id == interview_id).first()
+        if not db_interview:
+            return
+        
+        if db_interview.status != InterviewStatus.ANALYZING:
+            db_interview.status = InterviewStatus.ANALYZING
+            db.commit()
+        
+        try:
+            evaluation_result = generate_interview_evaluation_from_transcript(
+                transcript,
+                interviewer_evaluation,
+                interviewer_score
+            )
+            db_interview.evaluation = evaluation_result.get("evaluation", interviewer_evaluation)
+            db_interview.suggestion = evaluation_result.get("suggestion", interviewer_suggestion)
+        except Exception as eval_error:
+            print(f"Combined evaluation generation failed: {eval_error}")
+            db_interview.evaluation = interviewer_evaluation
+            db_interview.suggestion = interviewer_suggestion
+        
+        db_interview.status = InterviewStatus.COMPLETED
+        db_interview.result = InterviewResult.PENDING
+        db.commit()
+        
+    except Exception as e:
+        print(f"Error in combined evaluation for interview {interview_id}: {e}")
+        try:
+            db_interview = db.query(Interview).filter(Interview.id == interview_id).first()
+            if db_interview:
+                db_interview.status = InterviewStatus.COMPLETED
+                db_interview.result = InterviewResult.PENDING
+                db.commit()
+        except:
+            pass
+    finally:
+        db.close()
+
 
 def confirm_interview_result(db: Session, interview_id: UUID, result: str, background_tasks: BackgroundTasks = None):
     db_interview = db.query(Interview).filter(Interview.id == interview_id).first()
@@ -669,32 +728,64 @@ def send_result_notification_background(interview_id: UUID):
     finally:
         db.close()
 
-def submit_interview_score(db: Session, interview_id: UUID, score_data: InterviewScore, background_tasks: BackgroundTasks):
+def submit_interview_score(db: Session, interview_id: UUID, interviewer_id: UUID, score_data: InterviewScore, background_tasks: BackgroundTasks):
+    """
+    统一的评分提交函数，单面试官和多面试官都使用此函数。
+    """
     db_interview = db.query(Interview).filter(Interview.id == interview_id).first()
     if not db_interview:
         return None
 
-    # 如果状态是 SCHEDULED，自动改为 IN_PROGRESS
     if db_interview.status == InterviewStatus.SCHEDULED:
         db_interview.status = InterviewStatus.IN_PROGRESS
-        print(f"Interview {interview_id} status auto-changed to IN_PROGRESS on score submission")
+        db.commit()
 
-    # 保存评分和评语
+    if not db_interview.panel_members or len(db_interview.panel_members) == 0:
+        db_interview.panel_members = [str(interviewer_id)]
+        db.commit()
+
+    avg_score = sum(score_data.scores.values()) // len(score_data.scores) if score_data.scores else 0
+
+    panel = db.query(InterviewPanel).filter(
+        InterviewPanel.interview_id == interview_id,
+        InterviewPanel.interviewer_id == interviewer_id
+    ).first()
+
+    if not panel:
+        panel = InterviewPanel(
+            interview_id=interview_id,
+            interviewer_id=interviewer_id,
+            scores=score_data.scores,
+            comments=score_data.comments,
+            total_score=avg_score,
+            is_submitted=True
+        )
+        db.add(panel)
+    else:
+        panel.scores = score_data.scores
+        panel.comments = score_data.comments
+        panel.total_score = avg_score
+        panel.is_submitted = True
+
+    db.commit()
+    db.refresh(panel)
+
     db_interview.scores = score_data.scores
     db_interview.comments = score_data.comments
-
+    db_interview.total_score = avg_score
+    db_interview.status = InterviewStatus.ANALYZING
+    db_interview.result = InterviewResult.PENDING
     db.commit()
     db.refresh(db_interview)
     
-    # Add background task
     background_tasks.add_task(
         generate_evaluation_background,
         db_interview.id,
-        score_data.dict()
+        {
+            "scores": score_data.scores,
+            "panel_details": "",
+            "transcripts": ""
+        }
     )
-    
-    # Reset result to PENDING just in case
-    db_interview.result = InterviewResult.PENDING
-    db.commit()
     
     return db_interview
