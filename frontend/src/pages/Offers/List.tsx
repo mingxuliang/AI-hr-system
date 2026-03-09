@@ -398,21 +398,14 @@ const OffersList: React.FC = () => {
               <Tooltip title="编辑">
                 <Button type="text" icon={<EditOutlined />} onClick={() => openEditModal(record)} />
               </Tooltip>
-              <Popconfirm title="确定删除此Offer？" onConfirm={() => handleDelete(record.id)}>
-                <Tooltip title="删除">
-                  <Button type="text" danger icon={<DeleteOutlined />} />
-                </Tooltip>
-              </Popconfirm>
+              <Tooltip title="发送Offer">
+                <Button type="text" icon={<MailOutlined />} onClick={() => {
+                  setCurrentOffer(record);
+                  sendForm.setFieldsValue({ send_email: true, custom_message: '' });
+                  setSendModalVisible(true);
+                }} />
+              </Tooltip>
             </>
-          )}
-          {record.status === 'draft' && (
-            <Tooltip title="发送Offer">
-              <Button type="text" icon={<MailOutlined />} onClick={() => {
-                setCurrentOffer(record);
-                sendForm.setFieldsValue({ send_email: true, custom_message: '' });
-                setSendModalVisible(true);
-              }} />
-            </Tooltip>
           )}
           {record.status === 'sent' && (
             <>
@@ -450,6 +443,11 @@ const OffersList: React.FC = () => {
               </Tooltip>
             </Popconfirm>
           )}
+          <Popconfirm title="确定删除此Offer？此操作不可恢复。" onConfirm={() => handleDelete(record.id)}>
+            <Tooltip title="删除">
+              <Button type="text" danger icon={<DeleteOutlined />} />
+            </Tooltip>
+          </Popconfirm>
         </Space>
       ),
     },

@@ -262,7 +262,7 @@ def create_interview(db: Session, interview: InterviewCreate, background_tasks: 
         position_id=interview.position_id,
         interviewer=interview.interviewer,
         interview_time=_normalize_dt_utc(interview.interview_time),
-        questions=[], # Initially empty
+        questions=None if not interview.skip_ai_questions else [], # None means generating, [] means skipped
         status=InterviewStatus.SCHEDULED,
         panel_members=interview.panel_members,
         round=interview.round or 1
@@ -665,25 +665,25 @@ def confirm_interview_result(db: Session, interview_id: UUID, result: str, backg
     if db_interview.resume_id:
         resume = db.query(Resume).filter(Resume.id == db_interview.resume_id).first()
         if resume:
-            # 录用 - 面试流程结束，简历状态更新为完成
+            # 录用 - 面试通过，等待发Offer
             if db_interview.result == InterviewResult.HIRED:
-                resume.status = ResumeStatus.COMPLETED
+                resume.status = ResumeStatus.OFFER_PENDING
                 resume.screening_result = ScreeningResult.PASSED
             # 进入下一轮 - 简历保持待面试状态，可以安排下一轮面试
             elif db_interview.result == InterviewResult.NEXT_ROUND:
                 resume.status = ResumeStatus.PENDING_INTERVIEW
                 resume.screening_result = ScreeningResult.PASSED
-            # 通过（旧状态兼容）
+            # 通过 - 面试通过，等待后续安排
             elif db_interview.result == InterviewResult.PASSED:
-                resume.status = ResumeStatus.COMPLETED
+                resume.status = ResumeStatus.INTERVIEW_PASSED
                 resume.screening_result = ScreeningResult.PASSED
             # 淘汰
             elif db_interview.result == InterviewResult.REJECTED:
-                resume.status = ResumeStatus.REJECTED
+                resume.status = ResumeStatus.INTERVIEW_FAILED
                 resume.screening_result = ScreeningResult.REJECTED
             # 待定
             elif db_interview.result == InterviewResult.WAITLIST:
-                resume.status = ResumeStatus.COMPLETED
+                resume.status = ResumeStatus.WAITLIST
                 resume.screening_result = ScreeningResult.WAITLIST
 
             # Commit explicitly for resume if needed, but db.commit() below handles all changes in session

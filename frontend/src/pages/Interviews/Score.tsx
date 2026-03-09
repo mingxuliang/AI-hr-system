@@ -89,7 +89,10 @@ const InterviewScore: React.FC = () => {
     const userIdStr = String(user?.id);
     const myPanel = interview.panels?.find((p: any) => String(p.interviewer_id) === userIdStr);
     
+    const isGeneratingQuestions = interview.questions === null || interview.questions === undefined;
+    
     const shouldPoll = 
+      isGeneratingQuestions ||
       interview.status === 'analyzing' ||
       (isMultiInterviewer && myPanel?.is_submitted) ||
       (!isMultiInterviewer && interview.status === 'in_progress' && interview.scores && Object.keys(interview.scores).length > 0);
@@ -99,6 +102,7 @@ const InterviewScore: React.FC = () => {
         try {
           const res = await request.get(`/interviews/${id}`) as any;
           setInterview(res);
+          setQuestions(res.questions || []);
           fetchSubmissionStatus(id);
           
           if (res.status === 'completed') {
@@ -510,9 +514,6 @@ const InterviewScore: React.FC = () => {
       const panelMembers = interview?.panel_members || [];
       const isMultiInterviewer = panelMembers.length > 1;
       
-      console.log('[Submit Score] panelMembers:', panelMembers);
-      console.log('[Submit Score] isMultiInterviewer:', isMultiInterviewer);
-      
       if (isMultiInterviewer) {
         await request.post(`/interviews/${id}/panel-score`, {
           scores,
@@ -520,20 +521,15 @@ const InterviewScore: React.FC = () => {
         }) as any;
         
         const updatedInterview = await request.get(`/interviews/${id}`) as any;
-        console.log('[Submit Score] updatedInterview:', updatedInterview);
-        console.log('[Submit Score] panels:', updatedInterview.panels);
         setInterview(updatedInterview);
         
         const allSubmitted = panelMembers.every((memberId: string) => {
           const found = updatedInterview.panels?.some((p: any) => {
             const match = String(p.interviewer_id) === String(memberId) && p.is_submitted;
-            console.log(`[Submit Score] Checking memberId=${memberId}, panel.interviewer_id=${p.interviewer_id}, is_submitted=${p.is_submitted}, match=${match}`);
             return match;
           });
           return found;
         });
-        
-        console.log('[Submit Score] allSubmitted:', allSubmitted);
         
         if (allSubmitted) {
           message.success('所有面试官已提交，AI正在分析...');
@@ -601,32 +597,21 @@ const InterviewScore: React.FC = () => {
   const panelMembers = interview?.panel_members || [];
   const isMultiInterviewer = panelMembers.length > 1;
   
-  console.log('[Score Render] interview status:', interview.status);
-  console.log('[Score Render] panelMembers:', panelMembers);
-  console.log('[Score Render] panels:', interview.panels);
-  console.log('[Score Render] user?.id:', user?.id);
-  
   if (isMultiInterviewer && interview.panels) {
     const userIdStr = String(user?.id);
-    console.log('[Score Render] userIdStr:', userIdStr);
     
     const myPanel = interview.panels.find((p: any) => {
       const match = String(p.interviewer_id) === userIdStr;
-      console.log(`[Score Render] Checking panel: interviewer_id=${p.interviewer_id}, is_submitted=${p.is_submitted}, match=${match}`);
       return match;
     });
-    console.log('[Score Render] myPanel:', myPanel);
     
     const allSubmitted = panelMembers.every((memberId: string) => {
       const found = interview.panels?.some((p: any) => {
         const match = String(p.interviewer_id) === String(memberId) && p.is_submitted;
-        console.log(`[Score Render] allSubmitted check: memberId=${memberId}, panel.interviewer_id=${p.interviewer_id}, is_submitted=${p.is_submitted}, match=${match}`);
         return match;
       });
-      console.log(`[Score Render] memberId=${memberId} found=${found}`);
       return found;
     });
-    console.log('[Score Render] allSubmitted:', allSubmitted);
     
     if (myPanel?.is_submitted && !allSubmitted) {
       return (

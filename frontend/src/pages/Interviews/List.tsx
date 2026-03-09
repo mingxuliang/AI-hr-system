@@ -361,6 +361,7 @@ const InterviewsList: React.FC = () => {
         const map: Record<string, {text: string, color: string}> = {
           scheduled: { text: '待面试', color: 'blue' },
           in_progress: { text: '面试中', color: 'orange' },
+          analyzing: { text: '分析中', color: 'purple' },
           completed: { text: '已完成', color: 'green' },
           cancelled: { text: '已取消', color: 'default' }
         };
