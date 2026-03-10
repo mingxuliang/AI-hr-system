@@ -60,6 +60,7 @@ class InterviewResponse(InterviewBase):
     evaluation: Optional[str] = None
     suggestion: Optional[str] = None
     status: InterviewStatus
+    started_at: Optional[datetime] = None
     created_at: datetime
     resume: Optional[ResumeResponse] = None
     position: Optional[PositionResponse] = None

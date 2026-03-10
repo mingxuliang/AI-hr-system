@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Card, Descriptions, Button, InputNumber, Form, Input, Row, Col, Typography, message, Divider, Tag, Space, Spin, Modal, Popconfirm, Select, Collapse, Tooltip, List, Avatar, Progress } from 'antd';
 import { useParams, useNavigate } from 'react-router-dom';
-import { EditOutlined, DeleteOutlined, PlusOutlined, SaveOutlined, CloseOutlined, DownloadOutlined, FilePdfOutlined, FileWordOutlined, LeftOutlined, RightOutlined, CheckCircleOutlined, CheckCircleFilled, CaretRightOutlined, AudioOutlined, LoadingOutlined, ExpandOutlined, CompressOutlined, PlayCircleOutlined, UserOutlined, StopOutlined } from '@ant-design/icons';
+import { EditOutlined, DeleteOutlined, PlusOutlined, SaveOutlined, CloseOutlined, DownloadOutlined, FilePdfOutlined, FileWordOutlined, LeftOutlined, RightOutlined, CheckCircleOutlined, CheckCircleFilled, CaretRightOutlined, AudioOutlined, LoadingOutlined, ExpandOutlined, CompressOutlined, PlayCircleOutlined, UserOutlined, StopOutlined, ClockCircleOutlined } from '@ant-design/icons';
 import request from '../../utils/request';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -54,6 +54,10 @@ const InterviewScore: React.FC = () => {
   const [submissionStatus, setSubmissionStatus] = useState<any>(null);
   const [startingInterview, setStartingInterview] = useState(false);
 
+  // 面试计时状态
+  const [elapsedTime, setElapsedTime] = useState(0); // 秒
+  const [timerInterval, setTimerInterval] = useState<ReturnType<typeof setInterval> | null>(null);
+
   // 取消面试相关状态
   const [cancelModalVisible, setCancelModalVisible] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
@@ -75,6 +79,45 @@ const InterviewScore: React.FC = () => {
     onChange();
     return () => document.removeEventListener('fullscreenchange', onChange);
   }, []);
+
+  // 面试计时器
+  useEffect(() => {
+    if (interview?.status === 'in_progress' && interview?.started_at) {
+      const startTime = new Date(interview.started_at).getTime();
+      
+      const updateTimer = () => {
+        const now = Date.now();
+        const elapsed = Math.floor((now - startTime) / 1000);
+        setElapsedTime(elapsed);
+      };
+      
+      updateTimer();
+      const interval = setInterval(updateTimer, 1000);
+      setTimerInterval(interval);
+      
+      return () => {
+        clearInterval(interval);
+        setTimerInterval(null);
+      };
+    } else {
+      setElapsedTime(0);
+      if (timerInterval) {
+        clearInterval(timerInterval);
+        setTimerInterval(null);
+      }
+    }
+  }, [interview?.status, interview?.started_at]);
+
+  // 格式化时间显示
+  const formatTime = (seconds: number) => {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+    if (hours > 0) {
+      return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
+    return `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
 
   useEffect(() => {
     if (!id || !interview) return;
@@ -494,12 +537,6 @@ const InterviewScore: React.FC = () => {
     }
   };
 
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  };
-
   const handleSubmitScore = async () => {
     for (let i = 0; i < questions.length; i++) {
       if (scores[i] === undefined) {
@@ -705,6 +742,14 @@ const InterviewScore: React.FC = () => {
            <Button icon={<LeftOutlined />} onClick={() => navigate('/interviews')} />
          </Tooltip>
 
+         {/* 面试计时器 */}
+         {interview?.status === 'in_progress' && (
+           <Tag color="processing" style={{ fontSize: 16, padding: '4px 12px', marginRight: 8 }}>
+             <ClockCircleOutlined style={{ marginRight: 4 }} />
+             {formatTime(elapsedTime)}
+           </Tag>
+         )}
+
          {/* 开始面试按钮 */}
          {interview?.status === 'scheduled' && (
            <Tooltip title="开始面试">
@@ -713,7 +758,9 @@ const InterviewScore: React.FC = () => {
                icon={<PlayCircleOutlined />}
                onClick={handleStartInterview}
                loading={startingInterview}
-             />
+             >
+               开始面试
+             </Button>
            </Tooltip>
          )}
 
@@ -1133,15 +1180,18 @@ const InterviewScore: React.FC = () => {
                         下一题
                       </Button>
                     ) : (
-                      <Button 
-                        type="primary" 
-                        icon={<SaveOutlined />} 
-                        onClick={handleSubmitScore} 
-                        loading={submitting}
-                        style={{ paddingLeft: 24, paddingRight: 24 }}
-                      >
-                        提交评分
-                      </Button>
+                      <Tooltip title={interview?.status !== 'in_progress' ? '请先点击"开始面试"按钮' : ''}>
+                        <Button 
+                          type="primary" 
+                          icon={<SaveOutlined />} 
+                          onClick={handleSubmitScore} 
+                          loading={submitting}
+                          disabled={interview?.status !== 'in_progress'}
+                          style={{ paddingLeft: 24, paddingRight: 24 }}
+                        >
+                          提交评分
+                        </Button>
+                      </Tooltip>
                     )}
                   </div>
                 </div>

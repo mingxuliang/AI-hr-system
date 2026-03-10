@@ -199,6 +199,7 @@ class Interview(Base):
     interviewer = Column(String) # Keep for backward compatibility or display name
     round = Column(Integer, default=1) # Interview round
     interview_time = Column(DateTime(timezone=True))
+    started_at = Column(DateTime(timezone=True), nullable=True) # 面试实际开始时间
     questions = Column(JSON)
     scores = Column(JSON)
     comments = Column(JSON)

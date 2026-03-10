@@ -1,4 +1,5 @@
 from uuid import UUID
+from datetime import datetime
 from sqlalchemy.orm import Session, joinedload
 from app.models.models import Interview, Resume, Position, InterviewStatus, InterviewResult, QuestionBank, ResumeStatus, ScreeningResult, InterviewPanel, User
 from app.schemas.interview import InterviewCreate, InterviewUpdate, InterviewScore
@@ -9,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 def start_interview(db: Session, interview_id: UUID):
     """
-    开始面试，将状态从 SCHEDULED 改为 IN_PROGRESS。
+    开始面试，将状态从 SCHEDULED 改为 IN_PROGRESS，并记录开始时间。
     """
     db_interview = db.query(Interview).filter(Interview.id == interview_id).first()
     if not db_interview:
@@ -22,10 +23,11 @@ def start_interview(db: Session, interview_id: UUID):
         )
 
     db_interview.status = InterviewStatus.IN_PROGRESS
+    db_interview.started_at = datetime.utcnow()
     db.commit()
     db.refresh(db_interview)
 
-    print(f"Interview {interview_id} status changed to IN_PROGRESS")
+    print(f"Interview {interview_id} status changed to IN_PROGRESS, started_at: {db_interview.started_at}")
     return db_interview
 
 def submit_interview_panel_score(db: Session, interview_id: UUID, interviewer_id: UUID, score_data: InterviewScore):
