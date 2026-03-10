@@ -364,6 +364,27 @@ def export_interview_result(db: Session, interview_id: UUID, format: str = "mark
     content += f"- **面试结果**: {db_interview.result.value if db_interview.result else 'N/A'}\n"
     content += f"- **综合得分**: {db_interview.total_score if db_interview.total_score is not None else 'N/A'}\n\n"
     
+    # AI初审评价
+    if db_interview.resume:
+        resume = db_interview.resume
+        content += "## 简历初审评价\n\n"
+        content += f"- **匹配度评分**: {resume.match_score if resume.match_score is not None else 'N/A'} 分\n"
+        
+        screening_result_text = '待定'
+        if resume.screening_result:
+            screening_map = {
+                'passed': '通过',
+                'rejected': '淘汰',
+                'waitlist': '待定'
+            }
+            screening_result_text = screening_map.get(resume.screening_result.value if hasattr(resume.screening_result, 'value') else resume.screening_result, resume.screening_result)
+        content += f"- **初审结果**: {screening_result_text}\n\n"
+        
+        if resume.ai_review:
+            content += "**AI 评价**:\n\n"
+            content += f"{resume.ai_review}\n\n"
+        content += "---\n\n"
+    
     content += "## 综合评价\n\n"
     content += f"{db_interview.evaluation or '暂无评价'}\n\n"
     
