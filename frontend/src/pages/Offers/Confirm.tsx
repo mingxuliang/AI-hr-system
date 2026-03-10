@@ -56,7 +56,7 @@ const OfferConfirm: React.FC = () => {
   const fetchOffer = async () => {
     try {
       setLoading(true);
-      const response = await request.get(`/api/public/offers/confirm/${token}`);
+      const response = await request.get(`/public/offers/confirm/${token}`);
       setOffer(response);
       if (response.onboard_date) {
         setAcceptedOnboardDate(dayjs(response.onboard_date));
@@ -81,7 +81,7 @@ const OfferConfirm: React.FC = () => {
 
     try {
       setSubmitting(true);
-      const response = await request.post(`/api/public/offers/confirm/${token}`, {
+      const response = await request.post(`/public/offers/confirm/${token}`, {
         action,
         reason: action === 'reject' ? rejectReason : null,
         accepted_salary: action === 'accept' ? acceptedSalary : null,
@@ -183,7 +183,7 @@ const OfferConfirm: React.FC = () => {
     return null;
   }
 
-  if (offer.status !== 'SENT') {
+  if (offer.status !== 'sent' && offer.status !== 'SENT') {
     return (
       <div style={{ 
         minHeight: '100vh', 
@@ -197,7 +197,7 @@ const OfferConfirm: React.FC = () => {
           <Result
             status="warning"
             title="Offer状态已变更"
-            subTitle={`当前Offer状态为：${getStatusTag(offer.status)}`}
+            subTitle={<span>当前Offer状态为：{getStatusTag(offer.status.toUpperCase())}</span>}
           />
         </Card>
       </div>
