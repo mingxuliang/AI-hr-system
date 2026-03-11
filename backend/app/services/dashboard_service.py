@@ -4,7 +4,7 @@ from app.models.models import (
     Position, Resume, Interview, QuestionBank, User, InterviewPanel,
     PositionStatus, ResumeStatus, InterviewStatus, InterviewResult, UserRole
 )
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any, Optional
 import statistics
 
@@ -20,7 +20,8 @@ def get_dashboard_stats(db: Session):
         (Resume.status == ResumeStatus.PENDING_HR_DECISION)
     ).count()
     
-    today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    # 使用UTC时间进行比较
+    today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
     today_end = today_start + timedelta(days=1)
     today_interviews_count = db.query(Interview).filter(
         Interview.interview_time >= today_start,
@@ -30,7 +31,7 @@ def get_dashboard_stats(db: Session):
     
     total_questions_count = db.query(QuestionBank).count()
 
-    last_week = datetime.now() - timedelta(days=7)
+    last_week = datetime.now(timezone.utc) - timedelta(days=7)
     last_week_positions = db.query(Position).filter(Position.created_at >= last_week).count()
     last_week_resumes = db.query(Resume).filter(Resume.created_at >= last_week).count()
     last_week_interviews = db.query(Interview).filter(Interview.created_at >= last_week).count()
@@ -104,7 +105,7 @@ def get_recent_activities(db: Session, limit: int = 10):
     return activities[:limit]
 
 def get_interview_trends(db: Session, days: int = 7):
-    end_date = datetime.now()
+    end_date = datetime.now(timezone.utc)
     start_date = end_date - timedelta(days=days)
     
     interviews = db.query(Interview.created_at).filter(
@@ -279,7 +280,7 @@ def get_position_analytics(db: Session) -> Dict[str, Any]:
         for r in resumes:
             if r.status in [ResumeStatus.OFFER_ACCEPTED, ResumeStatus.ONBOARDING, ResumeStatus.COMPLETED]:
                 if r.parsed_at:
-                    days = (datetime.now() - r.parsed_at).days
+                    days = (datetime.now(timezone.utc) - r.parsed_at).days
                     processing_times.append(days)
         avg_processing_days = round(statistics.mean(processing_times), 1) if processing_times else None
         
@@ -392,7 +393,7 @@ def get_interviewer_analytics(db: Session) -> Dict[str, Any]:
     }
 
 def get_timeline_analytics(db: Session, days: int = 30) -> Dict[str, Any]:
-    end_date = datetime.now()
+    end_date = datetime.now(timezone.utc)
     start_date = end_date - timedelta(days=days)
     
     timeline_data = []
@@ -503,7 +504,7 @@ def get_overview(db: Session) -> Dict[str, Any]:
     time_to_hire_list = []
     for resume in hired_resumes:
         if resume.parsed_at:
-            days = (datetime.now() - resume.parsed_at).days
+            days = (datetime.now(timezone.utc) - resume.parsed_at).days
             time_to_hire_list.append(days)
     avg_time_to_hire = round(statistics.mean(time_to_hire_list), 1) if time_to_hire_list else None
     

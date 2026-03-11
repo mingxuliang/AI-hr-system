@@ -241,7 +241,7 @@ const PositionsList: React.FC = () => {
 
   const columns = [
     { 
-      title: '岗位名称', 
+      title: '岗位名称',
       dataIndex: 'title', 
       key: 'title',
       render: (text: string) => <span style={{ fontWeight: 500, color: '#0F172A' }}>{text}</span>

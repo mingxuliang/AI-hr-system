@@ -1,5 +1,5 @@
 from uuid import UUID
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session, joinedload
 from app.models.models import Interview, Resume, Position, InterviewStatus, InterviewResult, QuestionBank, ResumeStatus, ScreeningResult, InterviewPanel, User
 from app.schemas.interview import InterviewCreate, InterviewUpdate, InterviewScore
@@ -7,6 +7,18 @@ from fastapi import BackgroundTasks
 import logging
 
 logger = logging.getLogger(__name__)
+
+# 中国时区 UTC+8
+CHINA_TIMEZONE = timezone(timedelta(hours=8))
+
+def format_datetime_cn(dt: datetime) -> str:
+    """将UTC时间转换为中国时区并格式化"""
+    if not dt:
+        return 'N/A'
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    dt_cn = dt.astimezone(CHINA_TIMEZONE)
+    return dt_cn.strftime('%Y-%m-%d %H:%M')
 
 def start_interview(db: Session, interview_id: UUID):
     """
@@ -360,7 +372,7 @@ def export_interview_result(db: Session, interview_id: UUID, format: str = "mark
     content = f"# 面试评估报告\n\n"
     content += f"- **候选人**: {candidate_name}\n"
     content += f"- **应聘岗位**: {position_title}\n"
-    content += f"- **面试时间**: {db_interview.interview_time.strftime('%Y-%m-%d %H:%M') if db_interview.interview_time else 'N/A'}\n"
+    content += f"- **面试时间**: {format_datetime_cn(db_interview.interview_time)}\n"
     content += f"- **面试结果**: {db_interview.result.value if db_interview.result else 'N/A'}\n"
     content += f"- **综合得分**: {db_interview.total_score if db_interview.total_score is not None else 'N/A'}\n\n"
     

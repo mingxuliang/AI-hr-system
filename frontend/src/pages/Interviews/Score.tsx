@@ -373,10 +373,53 @@ const InterviewScore: React.FC = () => {
       const newQuestions = [...questions];
       newQuestions.splice(index, 1);
 
+      // 调整分数和评语的索引
+      const newScores: Record<string, number> = {};
+      const newComments: Record<string, string> = {};
+      const newTranscripts: Record<string, string> = {};
+      
+      Object.keys(scores).forEach(key => {
+        const idx = parseInt(key);
+        if (idx < index) {
+          newScores[key] = scores[key];
+        } else if (idx > index) {
+          newScores[String(idx - 1)] = scores[key];
+        }
+      });
+      
+      Object.keys(comments).forEach(key => {
+        const idx = parseInt(key);
+        if (idx < index) {
+          newComments[key] = comments[key];
+        } else if (idx > index) {
+          newComments[String(idx - 1)] = comments[key];
+        }
+      });
+      
+      Object.keys(transcripts).forEach(key => {
+        const idx = parseInt(key);
+        if (idx < index) {
+          newTranscripts[key] = transcripts[key];
+        } else if (idx > index) {
+          newTranscripts[String(idx - 1)] = transcripts[key];
+        }
+      });
+
       // Sync to backend
       await request.put(`/interviews/${id}/questions`, newQuestions);
+      
+      // 更新分数和评语到后端
+      if (Object.keys(newScores).length > 0 || Object.keys(newComments).length > 0) {
+        await request.post(`/interviews/${id}/score`, {
+          scores: newScores,
+          comments: newComments
+        });
+      }
 
       setQuestions(newQuestions);
+      setScores(newScores);
+      setComments(newComments);
+      setTranscripts(newTranscripts);
       message.success('删除成功');
 
       // Adjust current index if needed
