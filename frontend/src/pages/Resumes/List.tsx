@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
-import { Table, Button, Space, message, Tag, Modal, Tooltip, Typography, Form, Select, Upload, Input, DatePicker, InputNumber, Card, Row, Col, Checkbox, Alert } from 'antd';
-import { PlusOutlined, EyeOutlined, TeamOutlined, DeleteOutlined, UploadOutlined, ReloadOutlined, CloseCircleOutlined, SearchOutlined, UndoOutlined, SolutionOutlined } from '@ant-design/icons';
+import React, { useEffect, useState, useRef } from 'react';
+import { Table, Button, Space, message, Tag, Modal, Tooltip, Typography, Form, Select, Upload, Input, DatePicker, InputNumber, Card, Row, Col, Checkbox } from 'antd';
+import { PlusOutlined, EyeOutlined, TeamOutlined, DeleteOutlined, UploadOutlined, ReloadOutlined, CloseCircleOutlined, SearchOutlined, UndoOutlined, SolutionOutlined, SyncOutlined } from '@ant-design/icons';
 import request from '../../utils/request';
 import { useNavigate } from 'react-router-dom';
 
@@ -14,6 +14,8 @@ const ResumesList: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [positions, setPositions] = useState([]);
   const [questionBanks, setQuestionBanks] = useState([]);
+  const [pollingEnabled, setPollingEnabled] = useState(false);
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [interviewModalVisible, setInterviewModalVisible] = useState(false);
@@ -37,8 +39,8 @@ const ResumesList: React.FC = () => {
   const [searchName, setSearchName] = useState('');
   const [searchStatus, setSearchStatus] = useState<string | undefined>(undefined);
 
-  const fetchResumes = async () => {
-    setLoading(true);
+  const fetchResumes = async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const params: any = {};
       if (searchName) params.candidate_name = searchName;
@@ -51,12 +53,37 @@ const ResumesList: React.FC = () => {
 
       const res = await request.get('/resumes', { params });
       setData(res);
+
+      // 检查是否有正在解析中的简历
+      const hasProcessing = res.some((r: any) => r.parse_status === 'processing' || r.status === 'pending_screening');
+      setPollingEnabled(hasProcessing);
     } catch (error) {
-      message.error('获取简历列表失败');
+      if (!silent) message.error('获取简历列表失败');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
+
+  // 轮询检查解析状态
+  useEffect(() => {
+    if (pollingEnabled) {
+      pollingRef.current = setInterval(() => {
+        fetchResumes(true);
+      }, 3000);
+    } else {
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
+      }
+    }
+
+    return () => {
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
+      }
+    };
+  }, [pollingEnabled]);
 
   const fetchPositions = async () => {
     try {
@@ -101,11 +128,13 @@ const ResumesList: React.FC = () => {
   const handleReset = () => {
     setSearchName('');
     setSearchStatus(undefined);
-    // Use a timeout or effect to trigger fetch after state update, or pass params directly
-    // Here we'll just call fetch with empty params manually to be safe/quick
     setLoading(true);
     request.get('/resumes')
-      .then(res => setData(res))
+      .then(res => {
+        setData(res);
+        const hasProcessing = res.some((r: any) => r.parse_status === 'processing' || r.status === 'pending_screening');
+        setPollingEnabled(hasProcessing);
+      })
       .catch(() => message.error('获取简历列表失败'))
       .finally(() => setLoading(false));
   };
@@ -533,12 +562,16 @@ const ResumesList: React.FC = () => {
         <Space>
           {user?.role !== 'interviewer' && (
             <>
-              <Button icon={<ReloadOutlined />} onClick={fetchResumes}>刷新</Button>
+              <Button icon={pollingEnabled ? <SyncOutlined spin /> : <ReloadOutlined />} onClick={() => fetchResumes()}>
+                {pollingEnabled ? '解析中...' : '刷新'}
+              </Button>
               <Button type="primary" icon={<PlusOutlined />} onClick={handleUploadClick} size="large" style={{ borderRadius: '8px' }}>上传简历</Button>
             </>
           )}
           {user?.role === 'interviewer' && (
-            <Button icon={<ReloadOutlined />} onClick={fetchResumes}>刷新</Button>
+            <Button icon={pollingEnabled ? <SyncOutlined spin /> : <ReloadOutlined />} onClick={() => fetchResumes()}>
+              {pollingEnabled ? '解析中...' : '刷新'}
+            </Button>
           )}
         </Space>
       </div>

@@ -209,7 +209,7 @@ def submit_hr_decision_route(
 @router.post("/{resume_id}/confirm-rejection", response_model=ResumeResponse)
 def confirm_rejection_route(
     resume_id: UUID,
-    reason_category: RejectReasonCategory = Form(...),
+    reason_category: str = Form(...),
     reason_detail: str = Form(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(check_roles([UserRole.ADMIN, UserRole.HR]))
@@ -217,8 +217,14 @@ def confirm_rejection_route(
     """
     确认淘汰低分简历
     """
+    try:
+        reason_category_enum = RejectReasonCategory(reason_category)
+    except ValueError:
+        valid_values = [e.value for e in RejectReasonCategory]
+        raise HTTPException(status_code=400, detail=f"无效的淘汰原因，有效值为: {valid_values}")
+    
     hr_id = current_user.id
-    return confirm_rejection(db, resume_id, hr_id, reason_category, reason_detail)
+    return confirm_rejection(db, resume_id, hr_id, reason_category_enum, reason_detail)
 
 
 @router.post("/{resume_id}/override-rejection", response_model=ResumeResponse)

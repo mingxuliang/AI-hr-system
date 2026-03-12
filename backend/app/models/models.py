@@ -140,7 +140,7 @@ class Resume(Base):
     status = Column(Enum(ResumeStatus), default=ResumeStatus.PENDING_SCREENING)
     stage = Column(String, default="new")  # For Kanban: new, screening, interview, offer, hired, rejected
     # 淘汰相关字段
-    reject_reason_category = Column(Enum(RejectReasonCategory), nullable=True)
+    reject_reason_category = Column(Enum(RejectReasonCategory, values_callable=lambda obj: [e.value for e in obj]), nullable=True)
     reject_reason_detail = Column(Text, nullable=True)
     rejected_at = Column(DateTime, nullable=True)
     rejected_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)

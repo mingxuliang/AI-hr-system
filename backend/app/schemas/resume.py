@@ -5,6 +5,19 @@ from datetime import datetime
 from app.models.models import ResumeStatus, ScreeningResult, RejectReasonCategory, ReviewRecommendation
 from app.schemas.position import PositionResponse
 
+def _validate_reject_reason_category(v):
+    if v is None:
+        return None
+    if isinstance(v, RejectReasonCategory):
+        return v
+    if isinstance(v, str):
+        try:
+            return RejectReasonCategory(v)
+        except ValueError:
+            valid_values = [e.value for e in RejectReasonCategory]
+            raise ValueError(f"无效的淘汰原因，有效值为: {valid_values}")
+    return v
+
 class ResumeBase(BaseModel):
     candidate_name: Optional[str] = None
     contact: Optional[str] = None
@@ -109,6 +122,11 @@ class HRDecisionCreate(BaseModel):
     reject_reason_category: Optional[RejectReasonCategory] = None
     reject_reason_detail: Optional[str] = None
     hr_comment: Optional[str] = None
+
+    @field_validator("reject_reason_category", mode="before")
+    @classmethod
+    def validate_reject_reason(cls, v):
+        return _validate_reject_reason_category(v)
 
 
 class HRDecisionResponse(BaseModel):
