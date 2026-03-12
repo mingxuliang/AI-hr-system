@@ -59,6 +59,9 @@ def _get_client() -> OpenAI:
     )
     return _client_cache
 
+def _get_extra_body() -> Dict[str, Any]:
+    return {"enable_thinking": False}
+
 def analyze_resume(resume_text: str, position_description: str) -> Dict[str, Any]:
     prompt_data = prompt_manager.get_prompt(
         "analyze_resume", 
@@ -82,6 +85,7 @@ def analyze_resume(resume_text: str, position_description: str) -> Dict[str, Any
                 {'role': 'user', 'content': prompt_data['user']}
             ],
             response_format={"type": "json_object"},
+            extra_body=_get_extra_body(),
             **extra,
         )
         result = json.loads(completion.choices[0].message.content)
@@ -110,6 +114,7 @@ def generate_resume_markdown(resume_text: str) -> str:
                 {'role': 'system', 'content': prompt_data['system']},
                 {'role': 'user', 'content': prompt_data['user']}
             ],
+            extra_body=_get_extra_body(),
             **extra,
         )
         content = completion.choices[0].message.content
@@ -162,6 +167,7 @@ def generate_interview_questions(
                 {'role': 'user', 'content': prompt_data['user']}
             ],
             response_format={"type": "json_object"},
+            extra_body=_get_extra_body(),
             **extra,
         )
         result = json.loads(completion.choices[0].message.content)
@@ -203,6 +209,7 @@ def generate_interview_evaluation(
                 {'role': 'user', 'content': prompt_data['user']}
             ],
             response_format={"type": "json_object"},
+            extra_body=_get_extra_body(),
             **extra,
         )
         result = json.loads(completion.choices[0].message.content)
@@ -242,6 +249,7 @@ def generate_interview_evaluation_from_transcript(
                 {'role': 'user', 'content': prompt_data['user']}
             ],
             response_format={"type": "json_object"},
+            extra_body=_get_extra_body(),
             **extra,
         )
         result = json.loads(completion.choices[0].message.content)
@@ -282,6 +290,7 @@ def generate_coding_test_evaluation(
                 {"role": "user", "content": prompt_data["user"]},
             ],
             response_format={"type": "json_object"},
+            extra_body=_get_extra_body(),
             **extra,
         )
         result = json.loads(completion.choices[0].message.content)
@@ -321,6 +330,7 @@ def generate_jd(
                 {'role': 'user', 'content': prompt_data['user']}
             ],
             response_format={"type": "json_object"},
+            extra_body=_get_extra_body(),
             **extra,
         )
         result = json.loads(completion.choices[0].message.content)
@@ -365,6 +375,7 @@ def generate_jd_stream(
                 {'role': 'user', 'content': prompt_data['user']}
             ],
             response_format={"type": "json_object"},
+            extra_body=_get_extra_body(),
             **extra,
         )
         
@@ -418,6 +429,7 @@ def chat_jd_stream(
             model=cfg["llm_model"],
             messages=formatted_messages,
             response_format={"type": "json_object"},
+            extra_body=_get_extra_body(),
             **extra,
         )
         
@@ -446,6 +458,7 @@ def generate_text(prompt: str) -> str:
             messages=[
                 {'role': 'user', 'content': prompt}
             ],
+            extra_body=_get_extra_body(),
             **extra,
         )
         return completion.choices[0].message.content

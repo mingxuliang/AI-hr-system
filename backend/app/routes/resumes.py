@@ -14,7 +14,9 @@ from app.services.resume_service import (
     complete_department_review, aggregate_department_reviews, submit_hr_decision,
     confirm_rejection, override_rejection, get_resume_with_reviews
 )
-from app.models.models import ResumeStatus, RejectReasonCategory
+from app.models.models import ResumeStatus, RejectReasonCategory, User, UserRole
+from app.core.security import check_roles
+from app.routes.auth import get_current_user
 from typing import List, Dict, Any, Optional
 from uuid import UUID
 
@@ -33,7 +35,8 @@ def get_resumes_route(
     status: str = None,
     position_id: Optional[UUID] = None,
     reviewer_id: Optional[UUID] = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     return get_resumes(db, skip=skip, limit=limit, candidate_name=candidate_name, status=status, position_id=position_id, reviewer_id=reviewer_id)
 
@@ -42,7 +45,8 @@ def get_resumes_route(
 @router.post("/check-duplicate", response_model=DuplicateCheckResponse)
 def check_duplicate_route(
     request: DuplicateCheckRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     检查简历是否重复（基于邮箱/手机号）
@@ -64,6 +68,7 @@ def check_duplicate_route(
 
 # ==================== 简历上传 ====================
 
+# 注意：单简历上传保持公开，因为应聘者可能通过公开链接投递
 @router.post("", response_model=ResumeResponse)
 def create_resume_route(
     background_tasks: BackgroundTasks,
@@ -81,28 +86,42 @@ def batch_upload_resumes_route(
     background_tasks: BackgroundTasks,
     position_id: UUID = Form(...),
     files: List[UploadFile] = File(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(check_roles([UserRole.ADMIN, UserRole.HR]))
 ):
     return batch_upload_resumes(db, files, position_id, background_tasks)
 
 # ==================== 简历详情与更新 ====================
 
 @router.get("/{resume_id}", response_model=ResumeResponse)
-def get_resume_route(resume_id: UUID, db: Session = Depends(get_db)):
+def get_resume_route(
+    resume_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     resume = get_resume_with_reviews(db, resume_id)
     if not resume:
         raise HTTPException(status_code=404, detail="Resume not found")
     return resume
 
 @router.put("/{resume_id}", response_model=ResumeResponse)
-def update_resume_route(resume_id: UUID, resume: ResumeUpdate, db: Session = Depends(get_db)):
+def update_resume_route(
+    resume_id: UUID,
+    resume: ResumeUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(check_roles([UserRole.ADMIN, UserRole.HR]))
+):
     db_resume = update_resume(db, resume_id, resume)
     if not db_resume:
         raise HTTPException(status_code=404, detail="Resume not found")
     return db_resume
 
 @router.delete("/{resume_id}", response_model=ResumeResponse)
-def delete_resume_route(resume_id: UUID, db: Session = Depends(get_db)):
+def delete_resume_route(
+    resume_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(check_roles([UserRole.ADMIN, UserRole.HR]))
+):
     db_resume = delete_resume(db, resume_id)
     if not db_resume:
         raise HTTPException(status_code=404, detail="Resume not found")
@@ -113,6 +132,7 @@ def reparse_resume_route(
     resume_id: UUID,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
+    current_user: User = Depends(check_roles([UserRole.ADMIN, UserRole.HR]))
 ):
     resume = reparse_resume(db, resume_id, background_tasks)
     if not resume:
@@ -124,7 +144,8 @@ def reparse_resume_route(
 @router.get("/{resume_id}/department-reviews", response_model=DepartmentReviewSummary)
 def get_department_reviews_route(
     resume_id: UUID,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     获取部门评审汇总报告
@@ -136,7 +157,8 @@ def get_department_reviews_route(
 def create_department_review_route(
     resume_id: UUID,
     reviewer_id: UUID = Form(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(check_roles([UserRole.ADMIN, UserRole.HR]))
 ):
     """
     指派部门评审人
@@ -154,7 +176,8 @@ def complete_department_review_route(
     overall_score: int = Form(None),
     recommendation: str = Form(None),
     comment: str = Form(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """
     完成部门评审
@@ -174,7 +197,8 @@ def complete_department_review_route(
 def submit_hr_decision_route(
     resume_id: UUID,
     decision_data: HRDecisionCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(check_roles([UserRole.ADMIN, UserRole.HR]))
 ):
     """
     HR提交最终决策
@@ -187,22 +211,24 @@ def confirm_rejection_route(
     resume_id: UUID,
     reason_category: RejectReasonCategory = Form(...),
     reason_detail: str = Form(None),
-    hr_id: UUID = Form(...),  # TODO: 从认证中间件获取
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(check_roles([UserRole.ADMIN, UserRole.HR]))
 ):
     """
     确认淘汰低分简历
     """
+    hr_id = current_user.id
     return confirm_rejection(db, resume_id, hr_id, reason_category, reason_detail)
 
 
 @router.post("/{resume_id}/override-rejection", response_model=ResumeResponse)
 def override_rejection_route(
     resume_id: UUID,
-    hr_id: UUID = Form(...),  # TODO: 从认证中间件获取
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(check_roles([UserRole.ADMIN, UserRole.HR]))
 ):
     """
     覆盖AI淘汰建议，恢复到评审流程
     """
+    hr_id = current_user.id
     return override_rejection(db, resume_id, hr_id)

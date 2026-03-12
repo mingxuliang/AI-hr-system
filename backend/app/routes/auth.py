@@ -185,6 +185,10 @@ def update_user_role(
     if not db_user:
         raise HTTPException(status_code=404, detail="用户不存在")
 
+    # 防止管理员修改自己的角色
+    if db_user.id == current_user.id:
+        raise HTTPException(status_code=400, detail="不能修改自己的角色")
+
     db_user.role = new_role
     db.add(db_user)
     db.commit()

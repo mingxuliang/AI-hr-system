@@ -242,6 +242,7 @@ const JDGeneratorModal: React.FC<JDGeneratorModalProps> = ({
       open={visible}
       onCancel={handleCancel}
       width={900}
+      zIndex={1100}
       footer={[
         <Button key="regenerate" icon={<ReloadOutlined />} onClick={handleGenerate} disabled={generating}>
           重新生成
