@@ -280,7 +280,8 @@ def get_position_analytics(db: Session) -> Dict[str, Any]:
         for r in resumes:
             if r.status in [ResumeStatus.OFFER_ACCEPTED, ResumeStatus.ONBOARDING, ResumeStatus.COMPLETED]:
                 if r.parsed_at:
-                    days = (datetime.now(timezone.utc) - r.parsed_at).days
+                    parsed_at = r.parsed_at.replace(tzinfo=timezone.utc) if r.parsed_at.tzinfo is None else r.parsed_at
+                    days = (datetime.now(timezone.utc) - parsed_at).days
                     processing_times.append(days)
         avg_processing_days = round(statistics.mean(processing_times), 1) if processing_times else None
         
@@ -504,7 +505,8 @@ def get_overview(db: Session) -> Dict[str, Any]:
     time_to_hire_list = []
     for resume in hired_resumes:
         if resume.parsed_at:
-            days = (datetime.now(timezone.utc) - resume.parsed_at).days
+            parsed_at = resume.parsed_at.replace(tzinfo=timezone.utc) if resume.parsed_at.tzinfo is None else resume.parsed_at
+            days = (datetime.now(timezone.utc) - parsed_at).days
             time_to_hire_list.append(days)
     avg_time_to_hire = round(statistics.mean(time_to_hire_list), 1) if time_to_hire_list else None
     
