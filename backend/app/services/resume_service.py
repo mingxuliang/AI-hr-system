@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session, joinedload
 from app.models.models import (
-    Resume, Position, Interview, DepartmentReview, User,
+    Resume, Position, Interview, InterviewPanel, DepartmentReview, User, Offer,
     ResumeStatus, ScreeningResult, RejectReasonCategory, ReviewRecommendation
 )
 from app.schemas.resume import (
@@ -231,11 +231,21 @@ def delete_resume(db: Session, resume_id: UUID):
     if not db_resume:
         return None
 
-    # Delete associated interviews first
-    db.query(Interview).filter(Interview.resume_id == resume_id).delete()
+    # Get interview IDs for this resume
+    interview_ids = [i.id for i in db.query(Interview).filter(Interview.resume_id == resume_id).all()]
+
+    # Delete associated interview panels first (due to foreign key constraint)
+    if interview_ids:
+        db.query(InterviewPanel).filter(InterviewPanel.interview_id.in_(interview_ids)).delete(synchronize_session=False)
+
+    # Delete associated interviews
+    db.query(Interview).filter(Interview.resume_id == resume_id).delete(synchronize_session=False)
 
     # Delete associated department reviews
-    db.query(DepartmentReview).filter(DepartmentReview.resume_id == resume_id).delete()
+    db.query(DepartmentReview).filter(DepartmentReview.resume_id == resume_id).delete(synchronize_session=False)
+
+    # Delete associated offers
+    db.query(Offer).filter(Offer.resume_id == resume_id).delete(synchronize_session=False)
 
     # Solution: Eager load position before deletion, so it's in memory.
     # Re-query with options
