@@ -75,6 +75,8 @@ class ResumeResponse(ResumeBase):
     hr_review: Optional[str] = None
     status: ResumeStatus
     stage: Optional[str] = "new"
+    # 其他岗位匹配信息
+    other_position_matches: Optional[List[Dict[str, Any]]] = None
     # 淘汰相关字段
     reject_reason_category: Optional[RejectReasonCategory] = None
     reject_reason_detail: Optional[str] = None

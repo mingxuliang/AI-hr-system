@@ -62,17 +62,18 @@ def _get_client() -> OpenAI:
 def _get_extra_body() -> Dict[str, Any]:
     return {"enable_thinking": False}
 
-def analyze_resume(resume_text: str, position_description: str) -> Dict[str, Any]:
+def analyze_resume(resume_text: str, position_description: str, other_positions: str = "") -> Dict[str, Any]:
     prompt_data = prompt_manager.get_prompt(
-        "analyze_resume", 
-        resume_text=resume_text, 
-        position_description=position_description
+        "analyze_resume",
+        resume_text=resume_text,
+        position_description=position_description,
+        other_positions=other_positions
     )
-    
+
     if not prompt_data.get("user"):
         print("Failed to load prompt for analyze_resume")
         return {}
-        
+
     try:
         cfg = _get_llm_config()
         extra = {"temperature": cfg["llm_temperature"]}

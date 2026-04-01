@@ -12,7 +12,7 @@ from app.services.resume_service import (
     batch_upload_resumes, reparse_resume,
     check_duplicate_resume, create_department_review, get_department_reviews,
     complete_department_review, aggregate_department_reviews, submit_hr_decision,
-    confirm_rejection, override_rejection, get_resume_with_reviews
+    confirm_rejection, override_rejection, get_resume_with_reviews, transfer_resume_position
 )
 from app.models.models import ResumeStatus, RejectReasonCategory, User, UserRole, Resume
 from app.core.security import check_roles
@@ -250,6 +250,20 @@ def override_rejection_route(
     """
     hr_id = current_user.id
     return override_rejection(db, resume_id, hr_id)
+
+
+@router.post("/{resume_id}/transfer", response_model=ResumeResponse)
+def transfer_resume_position_route(
+    resume_id: UUID,
+    background_tasks: BackgroundTasks,
+    new_position_id: UUID = Form(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(check_roles([UserRole.ADMIN, UserRole.HR]))
+):
+    """
+    将简历转岗到其他岗位，并重新解析
+    """
+    return transfer_resume_position(db, resume_id, new_position_id, background_tasks)
 
 
 @router.get("/queue/status")

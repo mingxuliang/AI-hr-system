@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Button, Card, Form, Input, Space, Typography, message, Result, Switch, InputNumber, Divider } from 'antd';
+import React, { useEffect, useState, useRef } from 'react';
+import { Button, Card, Form, Input, Space, Typography, message, Result, Switch, InputNumber, Divider, Tabs, Alert, Tag, Tooltip } from 'antd';
 import request from '../../utils/request';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -23,6 +23,36 @@ type MailSettings = {
   frontend_url?: string | null;
 };
 
+type PromptConfigItem = {
+  system: string;
+  user: string;
+};
+
+type PromptConfigs = {
+  prompts: Record<string, PromptConfigItem>;
+};
+
+type PromptVariable = {
+  name: string;
+  description: string;
+};
+
+type PromptVariablesResponse = {
+  variables_by_prompt: Record<string, PromptVariable[]>;
+  all_variables: Record<string, string>;
+};
+
+const promptNames: Record<string, string> = {
+  generate_jd: 'JD生成',
+  analyze_resume: '简历分析',
+  generate_resume_markdown: '简历Markdown生成',
+  generate_interview_questions: '面试题目生成',
+  generate_interview_evaluation: '面试评价生成',
+  generate_interview_evaluation_from_transcript: '转写评价生成',
+  generate_coding_test_evaluation: '笔试代码评价',
+
+};
+
 const SystemSettingsPage: React.FC = () => {
   const { user } = useAuth();
   const [form] = Form.useForm();
@@ -36,6 +66,15 @@ const SystemSettingsPage: React.FC = () => {
   const [editingKey, setEditingKey] = useState(false);
   const [editingMailPassword, setEditingMailPassword] = useState(false);
   const role = (user as any)?.role?.value ?? (user as any)?.role;
+
+  // 提示词配置相关状态
+  const [promptLoading, setPromptLoading] = useState(false);
+  const [promptSaving, setPromptSaving] = useState(false);
+  const [promptConfigs, setPromptConfigs] = useState<PromptConfigs | null>(null);
+  const [activePromptKey, setActivePromptKey] = useState('generate_jd');
+  const [promptForm] = Form.useForm();
+  const [promptVariables, setPromptVariables] = useState<PromptVariablesResponse | null>(null);
+  const userPromptRef = useRef<any>(null);
 
   const fetchSettings = async () => {
     setLoading(true);
@@ -92,11 +131,80 @@ const SystemSettingsPage: React.FC = () => {
     }
   };
 
+  const fetchPromptConfigs = async () => {
+    setPromptLoading(true);
+    try {
+      const res = (await request.get('/settings/prompts')) as PromptConfigs;
+      setPromptConfigs(res);
+      // 设置当前选中提示词的表单值
+      const currentPrompt = res.prompts[activePromptKey];
+      if (currentPrompt) {
+        promptForm.setFieldsValue({
+          system: currentPrompt.system,
+          user: currentPrompt.user,
+        });
+      }
+    } catch (e) {
+      const status = (e as any)?.response?.status;
+      if (status === 404) {
+        message.error('提示词配置接口不存在：请确认后端已更新并重启');
+      } else if (status === 403) {
+        message.error('无权限访问提示词配置');
+      } else {
+        message.error('获取提示词配置失败');
+      }
+    } finally {
+      setPromptLoading(false);
+    }
+  };
+
+  const fetchPromptVariables = async () => {
+    try {
+      const res = (await request.get('/settings/prompts/variables')) as PromptVariablesResponse;
+      setPromptVariables(res);
+    } catch (e) {
+      console.error('获取提示词变量失败', e);
+    }
+  };
+
+  const insertVariable = (variableName: string) => {
+    const variableText = `{${variableName}}`;
+    const textarea = userPromptRef.current?.resizableTextArea?.textArea;
+    if (textarea) {
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const currentValue = promptForm.getFieldValue('user') || '';
+      const newValue = currentValue.substring(0, start) + variableText + currentValue.substring(end);
+      promptForm.setFieldsValue({ user: newValue });
+      // 设置光标位置到插入文本之后
+      setTimeout(() => {
+        textarea.focus();
+        textarea.selectionStart = textarea.selectionEnd = start + variableText.length;
+      }, 0);
+    } else {
+      // 如果无法获取 textarea，则追加到末尾
+      const currentValue = promptForm.getFieldValue('user') || '';
+      promptForm.setFieldsValue({ user: currentValue + variableText });
+    }
+  };
+
   useEffect(() => {
     if (role !== 'admin') return;
     fetchSettings();
     fetchMailSettings();
+    fetchPromptConfigs();
+    fetchPromptVariables();
   }, [role, form, mailForm]);
+
+  // 当切换 Tab 时更新表单值
+  useEffect(() => {
+    if (promptConfigs && promptConfigs.prompts[activePromptKey]) {
+      promptForm.setFieldsValue({
+        system: promptConfigs.prompts[activePromptKey].system,
+        user: promptConfigs.prompts[activePromptKey].user,
+      });
+    }
+  }, [activePromptKey, promptConfigs, promptForm]);
 
   const save = async () => {
     try {
@@ -165,6 +273,45 @@ const SystemSettingsPage: React.FC = () => {
     }
   };
 
+  const savePrompt = async () => {
+    try {
+      const values = await promptForm.validateFields();
+
+      // 检查是否存在未知变量
+      const userPrompt = values.user || '';
+      const variablePattern = /\{([a-zA-Z_][a-zA-Z0-9_]*)\}/g;
+      const matches = userPrompt.matchAll(variablePattern);
+      const usedVariables = Array.from(matches, m => m[1]);
+
+      const allowedVariables = promptVariables?.variables_by_prompt[activePromptKey]?.map(v => v.name) || [];
+      const unknownVariables = usedVariables.filter(v => !allowedVariables.includes(v));
+
+      if (unknownVariables.length > 0) {
+        message.warning(`提示词中包含未知变量: ${unknownVariables.map(v => `{${v}}`).join(', ')}，请检查是否填写正确`);
+        return;
+      }
+
+      setPromptSaving(true);
+      await request.put(`/settings/prompts/${activePromptKey}`, {
+        system: values.system,
+        user: values.user,
+      });
+      await fetchPromptConfigs();
+      message.success('提示词配置已保存');
+    } catch (e) {
+      const status = (e as any)?.response?.status;
+      if (status === 404) {
+        message.error('提示词配置接口不存在');
+      } else if (status === 403) {
+        message.error('无权限保存提示词配置');
+      } else {
+        message.error('保存失败');
+      }
+    } finally {
+      setPromptSaving(false);
+    }
+  };
+
   const testMail = async () => {
     try {
       await request.post('/settings/mail/test');
@@ -189,11 +336,70 @@ const SystemSettingsPage: React.FC = () => {
     );
   }
 
+  const promptTabs = Object.keys(promptConfigs?.prompts || {}).map((key) => ({
+    key,
+    label: promptNames[key] || key,
+    children: (
+      <Form form={promptForm} layout="vertical">
+        <Alert
+          message="注意：修改提示词后立即生效，请谨慎操作"
+          type="warning"
+          showIcon
+          style={{ marginBottom: 16 }}
+        />
+        <Form.Item
+          name="system"
+          label="System Prompt"
+          rules={[{ required: true, message: '请输入 System Prompt' }]}
+        >
+          <Input.TextArea
+            rows={3}
+            placeholder="系统提示词，定义 AI 的角色和行为"
+          />
+        </Form.Item>
+        <Form.Item
+          name="user"
+          label="User Prompt"
+          rules={[{ required: true, message: '请输入 User Prompt' }]}
+        >
+          <Input.TextArea
+            ref={userPromptRef}
+            rows={12}
+            placeholder="用户提示词模板，包含具体任务指令"
+          />
+        </Form.Item>
+        {/* 可用变量列表 */}
+        {promptVariables && promptVariables.variables_by_prompt[key] && (
+          <div style={{ marginBottom: 16 }}>
+            <Text strong style={{ marginRight: 8 }}>可用变量：</Text>
+            <div style={{ marginTop: 8 }}>
+              {promptVariables.variables_by_prompt[key].map((variable) => (
+                <Tooltip key={variable.name} title={variable.description}>
+                  <Tag
+                    color="blue"
+                    style={{ cursor: 'pointer', marginBottom: 4 }}
+                    onClick={() => insertVariable(variable.name)}
+                  >
+                    {`{${variable.name}}`}
+                  </Tag>
+                </Tooltip>
+              ))}
+            </div>
+            <Text type="secondary" style={{ fontSize: 12 }}>点击变量可插入到 User Prompt 中</Text>
+          </div>
+        )}
+        <Button type="primary" onClick={savePrompt} loading={promptSaving}>
+          保存当前提示词
+        </Button>
+      </Form>
+    ),
+  }));
+
   return (
     <div>
       <div style={{ marginBottom: 32 }}>
         <Title level={2} style={{ margin: 0 }}>系统设置</Title>
-        <Text type="secondary">配置 AI 模型和邮件服务参数（仅管理员）</Text>
+        <Text type="secondary">配置 AI 模型、邮件服务和提示词参数（仅管理员）</Text>
       </div>
 
       <Card
@@ -370,6 +576,24 @@ const SystemSettingsPage: React.FC = () => {
             <Input placeholder="例如：http://localhost:5173 或 https://hr.example.com" autoComplete="off" />
           </Form.Item>
         </Form>
+      </Card>
+
+      <Divider />
+
+      <Card
+        title="提示词配置"
+        loading={promptLoading}
+        extra={
+          <Space>
+            <Button onClick={fetchPromptConfigs}>刷新</Button>
+          </Space>
+        }
+      >
+        <Tabs
+          activeKey={activePromptKey}
+          onChange={setActivePromptKey}
+          items={promptTabs}
+        />
       </Card>
     </div>
   );

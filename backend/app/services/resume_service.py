@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session, joinedload
 from app.models.models import (
     Resume, Position, Interview, InterviewPanel, DepartmentReview, User, Offer,
-    ResumeStatus, ScreeningResult, RejectReasonCategory, ReviewRecommendation
+    ResumeStatus, ScreeningResult, RejectReasonCategory, ReviewRecommendation, PositionStatus
 )
 from app.schemas.resume import (
     ResumeCreate, ResumeUpdate, ScreeningResult as ScreeningResultSchema,
@@ -19,6 +19,7 @@ import os
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 from sqlalchemy import or_, and_, func
+import json
 
 def read_file_content(file_path: str) -> str:
     _, ext = os.path.splitext(file_path)
@@ -76,32 +77,119 @@ def process_resume_task(payload: Dict[str, Any]):
 
         position_desc = f"{position.title}\n{position.description}\n{position.requirements}"
 
-        parsed_data = analyze_resume(content, position_desc)
-        if not parsed_data or "match_score" not in parsed_data:
+        # 获取其他相近岗位（状态为 OPEN 或 PUBLISHED，排除当前岗位）
+        other_positions = db.query(Position).filter(
+            Position.id != position_id,
+            Position.status.in_([PositionStatus.OPEN, PositionStatus.PUBLISHED])
+        ).limit(5).all()
+
+        # 构建其他岗位信息字符串
+        other_positions_info = ""
+        if other_positions:
+            positions_list = []
+            for pos in other_positions:
+                pos_info = {
+                    "position_id": str(pos.id),
+                    "position_title": pos.title,
+                    "description": pos.description[:500] if pos.description else "",
+                    "requirements": pos.requirements[:300] if pos.requirements else "",
+                    "department": pos.department or "",
+                }
+                positions_list.append(pos_info)
+            other_positions_info = json.dumps(positions_list, ensure_ascii=False)
+        else:
+            other_positions_info = "暂无其他相近岗位"
+
+        parsed_data = analyze_resume(content, position_desc, other_positions_info)
+
+        # 解析 AI 返回结果，兼容多种格式
+        if not parsed_data:
             resume.parse_status = "failed"
             resume.parse_error = "AI 解析失败"
             db.commit()
             return
 
+        # 提取 match_score（可能在顶层或在 main_job_evaluation/main_position_match 中）
+        match_score = parsed_data.get("match_score")
+        if match_score is None:
+            main_eval = parsed_data.get("main_job_evaluation") or parsed_data.get("main_position_match") or {}
+            match_score = main_eval.get("match_score", 0)
+        if match_score is None:
+            match_score = 0
+
+        # 提取 screening_result
+        screening_result = parsed_data.get("screening_result", ScreeningResult.PENDING)
+
+        # 提取 ai_review
+        ai_review = parsed_data.get("ai_review", "")
+        if not ai_review:
+            main_eval = parsed_data.get("main_job_evaluation") or parsed_data.get("main_position_match") or {}
+            analysis = main_eval.get("analysis", {})
+            if isinstance(analysis, dict):
+                advantages = analysis.get("advantages", [])
+                disadvantages = analysis.get("disadvantages", [])
+                summary = analysis.get("summary", "")
+                ai_review_parts = []
+                if advantages:
+                    ai_review_parts.append("### ✅ 优势\n- " + "\n- ".join(advantages))
+                if disadvantages:
+                    ai_review_parts.append("### ⚠️ 不足\n- " + "\n- ".join(disadvantages))
+                if summary:
+                    ai_review_parts.append("### 💡 综合建议\n" + summary)
+                ai_review = "\n\n".join(ai_review_parts)
+            elif isinstance(analysis, str):
+                # analysis 是字符串的情况
+                ai_review = f"### 💡 分析\n{analysis}"
+            if not ai_review and parsed_data.get("recommendation"):
+                ai_review = "### 💡 综合建议\n" + parsed_data.get("recommendation", "")
+
+        # 提取联系方式
+        contact_info = parsed_data.get("contact_info", {})
+        if isinstance(contact_info, dict):
+            contact = contact_info.get("phone", "")
+            email = contact_info.get("email", "")
+        else:
+            contact = parsed_data.get("contact", "")
+            email = parsed_data.get("email", "")
+
+        # 提取姓名
+        candidate_name = parsed_data.get("candidate_name", "")
+
+        # 提取其他岗位匹配信息
+        other_matches = parsed_data.get("other_position_matches", [])
+
+        # 更新简历信息
         resume.parsed_data = parsed_data
-        resume.match_score = parsed_data.get("match_score", 0)
-        resume.screening_result = parsed_data.get("screening_result", ScreeningResult.PENDING)
-        resume.ai_review = parsed_data.get("ai_review", "")
+        resume.match_score = match_score if isinstance(match_score, int) else 0
+        resume.screening_result = screening_result if isinstance(screening_result, str) else ScreeningResult.PENDING
+        resume.ai_review = ai_review
+
+        # 存储其他岗位匹配信息
+        if other_matches:
+            resume.other_position_matches = other_matches
 
         if not use_user_info:
-            resume.candidate_name = parsed_data.get("candidate_name", "")
-            resume.contact = parsed_data.get("contact", "")
-            email = parsed_data.get("email")
-            if isinstance(email, str):
-                email = email.strip()
+            resume.candidate_name = candidate_name or "未识别"
+            resume.contact = contact
             resume.email = email or None
 
         resume.parse_status = "success"
         resume.parse_error = None
         resume.parsed_at = datetime.utcnow()
 
+        # 根据主岗位匹配分数和其他岗位匹配情况决定状态
+        has_better_match = False
+        if other_matches:
+            for match in other_matches:
+                if match.get("is_better_match") or match.get("match_score", 0) >= 70:
+                    has_better_match = True
+                    break
+
         if resume.match_score >= 60:
             resume.status = ResumeStatus.PENDING_REVIEW
+        elif has_better_match:
+            # 有更适合的其他岗位，设为备选状态
+            resume.status = ResumeStatus.WAITLIST
         else:
             resume.status = ResumeStatus.AUTO_REJECTED_PENDING_REVIEW
 
@@ -664,5 +752,52 @@ def get_resume_with_reviews(db: Session, resume_id: UUID) -> Optional[Resume]:
         joinedload(Resume.position),
         joinedload(Resume.department_reviews).joinedload(DepartmentReview.reviewer)
     ).filter(Resume.id == resume_id).first()
+
+    return resume
+
+
+def transfer_resume_position(db: Session, resume_id: UUID, new_position_id: UUID, background_tasks) -> Resume:
+    """
+    将简历转岗到其他岗位，并重新解析
+    """
+    resume = db.query(Resume).filter(Resume.id == resume_id).first()
+    if not resume:
+        raise HTTPException(status_code=404, detail="简历不存在")
+
+    # 检查新岗位是否存在
+    new_position = db.query(Position).filter(Position.id == new_position_id).first()
+    if not new_position:
+        raise HTTPException(status_code=404, detail="目标岗位不存在")
+
+    # 更新岗位
+    old_position_id = resume.position_id
+    resume.position_id = new_position_id
+
+    # 清除之前的解析结果
+    resume.parse_status = "processing"
+    resume.parse_error = None
+    resume.parsed_at = None
+    resume.parsed_data = None
+    resume.match_score = None
+    resume.ai_review = None
+    resume.screening_result = ScreeningResult.PENDING
+    resume.other_position_matches = None
+    resume.status = ResumeStatus.PENDING_SCREENING
+
+    # 清除部门评审记录
+    db.query(DepartmentReview).filter(DepartmentReview.resume_id == resume_id).delete()
+
+    # 清除HR评审
+    resume.hr_review = None
+    resume.reject_reason_category = None
+    resume.reject_reason_detail = None
+    resume.rejected_at = None
+    resume.rejected_by = None
+
+    db.commit()
+    db.refresh(resume)
+
+    # 触发重新解析
+    background_tasks.add_task(process_resume_background, resume.id, resume.position_id, False)
 
     return resume

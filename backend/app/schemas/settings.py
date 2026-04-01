@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, Dict
 
 
 class SystemModelConfigResponse(BaseModel):
@@ -49,3 +49,20 @@ class SystemConfigUpdate(BaseModel):
     """系统配置更新"""
     llm: Optional[SystemModelConfigUpdate] = None
     mail: Optional[MailConfigUpdate] = None
+
+
+class PromptConfigItem(BaseModel):
+    """单个提示词配置"""
+    system: str
+    user: str
+
+
+class PromptConfigsResponse(BaseModel):
+    """所有提示词配置响应"""
+    prompts: Dict[str, PromptConfigItem]
+
+
+class PromptConfigUpdate(BaseModel):
+    """单个提示词配置更新"""
+    system: Optional[str] = None
+    user: Optional[str] = None

@@ -139,6 +139,8 @@ class Resume(Base):
     hr_review = Column(Text)
     status = Column(Enum(ResumeStatus), default=ResumeStatus.PENDING_SCREENING)
     stage = Column(String, default="new")  # For Kanban: new, screening, interview, offer, hired, rejected
+    # 其他岗位匹配信息（用于候选人更适合其他岗位的情况）
+    other_position_matches = Column(JSON, nullable=True)
     # 淘汰相关字段
     reject_reason_category = Column(Enum(RejectReasonCategory, values_callable=lambda obj: [e.value for e in obj]), nullable=True)
     reject_reason_detail = Column(Text, nullable=True)
@@ -419,4 +421,6 @@ class SystemConfig(Base):
     mail_enabled = Column(Boolean, default=False)  # 是否启用邮件通知
     # 前端URL配置（用于生成邮件中的链接）
     frontend_url = Column(String, default="http://localhost:5173")
+    # 提示词配置（存储所有提示词的 JSON）
+    prompt_configs = Column(JSON, default=dict)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

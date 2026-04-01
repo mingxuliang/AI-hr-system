@@ -43,6 +43,9 @@ const ResumeDetail: React.FC = () => {
   const [hrDecisionForm] = Form.useForm();
   const [deptReviewForm] = Form.useForm();
 
+  // 获取用户角色
+  const userRole = (user as any)?.role?.value ?? (user as any)?.role;
+
   // 部门评审相关状态
   const [deptReviewSummary, setDeptReviewSummary] = useState<any>(null);
   const [reviewers, setReviewers] = useState<any[]>([]);
@@ -298,13 +301,35 @@ const ResumeDetail: React.FC = () => {
     }
   };
 
+  // 转岗
+  const handleTransfer = (newPositionId: string, positionTitle: string) => {
+    Modal.confirm({
+      title: '确认转岗',
+      content: `确定将该候选人转岗到「${positionTitle}」吗？转岗后将重新进行简历分析。`,
+      okText: '确认转岗',
+      cancelText: '取消',
+      onOk: async () => {
+        try {
+          const formData = new FormData();
+          formData.append('new_position_id', newPositionId);
+          await request.post(`/resumes/${id}/transfer`, formData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+          });
+          message.success('转岗成功，正在重新解析简历');
+          fetchResume(id!);
+        } catch (error) {
+          message.error('转岗失败');
+        }
+      }
+    });
+  };
+
   // 渲染操作按钮区域
   const renderActionButtons = () => {
     const buttons: React.ReactNode[] = [];
 
     // 检查当前用户是否是被指派的评审人且未完成评审
     const isAssignedReviewer = myReview && !myReview.is_completed;
-    const userRole = user?.role;
 
     // 如果是被指派的评审人，显示提交评审按钮
     if (isAssignedReviewer) {
@@ -379,7 +404,7 @@ const ResumeDetail: React.FC = () => {
       <Card
         title={<span><TeamOutlined style={{ marginRight: 8 }} />部门评审</span>}
         style={{ marginTop: 24, borderRadius: '16px' }}
-        extra={['pending_review', 'pending_dept_review'].includes(resume.status) && (user?.role === 'admin' || user?.role === 'hr') && (
+        extra={['pending_review', 'pending_dept_review'].includes(resume.status) && (userRole === 'admin' || userRole === 'hr') && (
           <Button type="primary" size="small" onClick={() => setIsAssignReviewerModalVisible(true)}>指派评审人</Button>
         )}
       >
@@ -596,6 +621,69 @@ const ResumeDetail: React.FC = () => {
               {resume.ai_review || '暂无评价'}
             </ReactMarkdown>
           </div>
+
+          {/* 其他岗位匹配推荐 */}
+          {resume.other_position_matches && resume.other_position_matches.length > 0 && (
+            <>
+              <Divider style={{ borderColor: '#E2E8F0' }}>其他岗位匹配推荐</Divider>
+              <div style={{
+                background: '#F0F9FF',
+                padding: '20px',
+                borderRadius: '12px',
+                border: '1px solid #BAE6FD',
+              }}>
+                <Text type="secondary" style={{ marginBottom: 12, display: 'block' }}>
+                  该候选人与以下岗位也有较好的匹配度，可考虑转岗推荐
+                </Text>
+                <List
+                  dataSource={resume.other_position_matches}
+                  renderItem={(match: any) => (
+                    <List.Item style={{ border: 'none', padding: '12px 0' }}>
+                      <Card
+                        size="small"
+                        style={{ width: '100%', background: '#fff', borderRadius: 8 }}
+                        bodyStyle={{ padding: '12px 16px' }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div style={{ flex: 1 }}>
+                            <Space>
+                              <Text strong>{match.position_title}</Text>
+                              {match.is_better_match && (
+                                <Tag color="green">更适合</Tag>
+                              )}
+                            </Space>
+                            {match.reason && (
+                              <Text type="secondary" style={{ display: 'block', marginTop: 4, fontSize: 13 }}>
+                                {match.reason}
+                              </Text>
+                            )}
+                          </div>
+                          <Space>
+                            <Progress
+                              type="circle"
+                              percent={match.match_score}
+                              width={45}
+                              format={percent => <span style={{ fontSize: 12, fontWeight: 600 }}>{percent}%</span>}
+                              strokeColor={match.match_score >= 80 ? '#10B981' : match.match_score >= 60 ? '#F59E0B' : '#EF4444'}
+                            />
+                            {(userRole === 'admin' || userRole === 'hr') && match.position_id && (
+                              <Button
+                                type="primary"
+                                size="small"
+                                onClick={() => handleTransfer(match.position_id, match.position_title)}
+                              >
+                                转岗
+                              </Button>
+                            )}
+                          </Space>
+                        </div>
+                      </Card>
+                    </List.Item>
+                  )}
+                />
+              </div>
+            </>
+          )}
         </Card>
 
         {/* 部门评审区域 */}

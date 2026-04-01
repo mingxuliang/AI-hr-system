@@ -8,7 +8,8 @@ from app.models.models import SystemConfig, UserRole
 from app.schemas.settings import (
     SystemModelConfigResponse, SystemModelConfigUpdate,
     MailConfigResponse, MailConfigUpdate,
-    SystemConfigResponse, SystemConfigUpdate
+    SystemConfigResponse, SystemConfigUpdate,
+    PromptConfigsResponse, PromptConfigItem, PromptConfigUpdate
 )
 
 
@@ -181,3 +182,85 @@ def test_mail_settings(
     # 发送测试邮件给当前用户
     # 这里简化处理，实际应该发送给当前用户的邮箱
     return {"message": "邮件配置有效"}
+
+
+@router.get("/prompts", response_model=PromptConfigsResponse)
+def get_prompt_configs(
+    db: Session = Depends(get_db),
+    _current_user=Depends(check_roles([UserRole.ADMIN])),
+):
+    """获取所有提示词配置"""
+    from app.utils.prompt_manager import prompt_manager
+
+    prompts = prompt_manager.get_all_prompts()
+    prompt_items = {}
+    for key, config in prompts.items():
+        prompt_items[key] = PromptConfigItem(
+            system=config.get('system', ''),
+            user=config.get('user', '')
+        )
+    return PromptConfigsResponse(prompts=prompt_items)
+
+
+@router.put("/prompts/{key}")
+def update_prompt_config(
+    key: str,
+    payload: PromptConfigUpdate,
+    db: Session = Depends(get_db),
+    _current_user=Depends(check_roles([UserRole.ADMIN])),
+):
+    """更新指定提示词配置"""
+    from app.utils.prompt_manager import prompt_manager
+    from sqlalchemy.orm.attributes import flag_modified
+
+    config = _get_or_create_config(db)
+
+    # 确保配置已初始化
+    if not config.prompt_configs:
+        config.prompt_configs = prompt_manager._prompts.get('prompts', {})
+
+    # 获取现有配置
+    existing_config = config.prompt_configs.get(key, {})
+    if not isinstance(existing_config, dict):
+        existing_config = {}
+    data = payload.dict(exclude_unset=True)
+
+    # 更新配置
+    if 'system' in data:
+        existing_config['system'] = data['system']
+    if 'user' in data:
+        existing_config['user'] = data['user']
+
+    config.prompt_configs[key] = existing_config
+    # 标记 JSON 列已修改，确保 SQLAlchemy 能检测到变化
+    flag_modified(config, "prompt_configs")
+    db.commit()
+    db.refresh(config)
+
+    # 清除缓存，强制重新加载
+    prompt_manager.reload_from_db()
+
+    return {"message": "提示词配置已更新", "key": key}
+
+
+@router.post("/prompts/reload")
+def reload_prompt_configs(
+    db: Session = Depends(get_db),
+    _current_user=Depends(check_roles([UserRole.ADMIN])),
+):
+    """强制重新加载提示词配置（清除缓存）"""
+    from app.utils.prompt_manager import prompt_manager
+
+    prompt_manager.reload_from_db()
+    return {"message": "提示词配置已重新加载"}
+
+
+@router.get("/prompts/variables")
+def get_prompt_variables():
+    """获取所有提示词可用变量"""
+    from app.config.prompt_variables import PROMPT_VARIABLES, ALL_VARIABLES
+
+    return {
+        "variables_by_prompt": PROMPT_VARIABLES,
+        "all_variables": ALL_VARIABLES,
+    }
