@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import Optional, Tuple
+import os
 
 from app.config.database import get_db
 from app.core.security import check_roles
@@ -29,7 +30,12 @@ def _get_or_create_config(db: Session) -> SystemConfig:
     config = db.query(SystemConfig).first()
     if config:
         return config
-    config = SystemConfig()
+    config = SystemConfig(
+        llm_provider=os.getenv("LLM_PROVIDER", "dashscope"),
+        llm_base_url=os.getenv("OPENAI_BASE_URL") or os.getenv("LLM_BASE_URL") or "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        llm_model=os.getenv("OPENAI_MODEL") or os.getenv("LLM_MODEL") or "qwen3.5-plus",
+        llm_api_key=os.getenv("OPENAI_API_KEY") or os.getenv("LLM_API_KEY"),
+    )
     db.add(config)
     db.commit()
     db.refresh(config)

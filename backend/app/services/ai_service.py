@@ -9,9 +9,9 @@ from app.models.models import SystemConfig
 
 load_dotenv()
 
-_DEFAULT_PROVIDER = "dashscope"
-_DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-_DEFAULT_MODEL = "qwen3.5-plus"
+_DEFAULT_PROVIDER = os.getenv("LLM_PROVIDER", "dashscope")
+_DEFAULT_BASE_URL = os.getenv("OPENAI_BASE_URL") or os.getenv("LLM_BASE_URL") or "https://dashscope.aliyuncs.com/compatible-mode/v1"
+_DEFAULT_MODEL = os.getenv("OPENAI_MODEL") or os.getenv("LLM_MODEL") or "qwen3.5-plus"
 _DEFAULT_TEMPERATURE = 0.2
 _DEFAULT_BASE_URL_BY_PROVIDER = {
     "dashscope": "https://dashscope.aliyuncs.com/compatible-mode/v1",
@@ -33,7 +33,7 @@ def _get_llm_config() -> Dict[str, Any]:
         llm_temperature = (cfg.llm_temperature if cfg and cfg.llm_temperature is not None else None)
         llm_temperature = _DEFAULT_TEMPERATURE if llm_temperature is None else llm_temperature
         llm_max_tokens = cfg.llm_max_tokens if cfg else None
-        llm_api_key = (cfg.llm_api_key if cfg else None)
+        llm_api_key = (cfg.llm_api_key if cfg else None) or os.getenv("OPENAI_API_KEY") or os.getenv("LLM_API_KEY")
         return {
             "llm_provider": llm_provider,
             "llm_base_url": llm_base_url,
@@ -60,7 +60,10 @@ def _get_client() -> OpenAI:
     return _client_cache
 
 def _get_extra_body() -> Dict[str, Any]:
-    return {"enable_thinking": False}
+    cfg = _get_llm_config()
+    if cfg.get("llm_provider") == "dashscope":
+        return {"enable_thinking": False}
+    return {}
 
 def analyze_resume(resume_text: str, position_description: str, other_positions: str = "") -> Dict[str, Any]:
     prompt_data = prompt_manager.get_prompt(

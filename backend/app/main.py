@@ -1,8 +1,11 @@
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-import os
-from dotenv import load_dotenv
 from app.routes import auth, positions, question_banks, resumes, interviews, dashboard, coding_tests, settings, offers, offer_templates, public_review, workflows
 from app.routes.offers import router as offers_router, public_router as offers_public_router
 from app.config.database import engine, SessionLocal
@@ -17,22 +20,33 @@ Base.metadata.create_all(bind=engine)
 def seed_db():
     db = SessionLocal()
     try:
-        user = db.query(User).filter(User.email == "admin@example.com").first()
+        admin_email = os.getenv("INITIAL_ADMIN_EMAIL", "admin@example.com")
+        admin_password = os.getenv("INITIAL_ADMIN_PASSWORD")
+        admin_name = os.getenv("INITIAL_ADMIN_NAME", "System Admin")
+        app_env = os.getenv("APP_ENV", "development")
+
+        if not admin_password and app_env == "development":
+            admin_password = "admin123"
+
+        user = db.query(User).filter(User.email == admin_email).first()
         if not user:
+            if not admin_password:
+                print("Skipping initial admin user. Set INITIAL_ADMIN_PASSWORD to seed one.")
+                return
             print("Seeding initial admin user...")
             admin_user = User(
-                email="admin@example.com",
-                hashed_password=get_password_hash("admin123"),
-                full_name="System Admin",
+                email=admin_email,
+                hashed_password=get_password_hash(admin_password),
+                full_name=admin_name,
                 role=UserRole.ADMIN
             )
             db.add(admin_user)
             db.commit()
-            print("Admin user created: admin@example.com / admin123")
+            print(f"Admin user created: {admin_email}")
         else:
-            if os.getenv("APP_ENV", "development") == "development":
-                user.hashed_password = get_password_hash("admin123")
-                user.full_name = user.full_name or "System Admin"
+            if app_env == "development" and admin_password:
+                user.hashed_password = get_password_hash(admin_password)
+                user.full_name = user.full_name or admin_name
                 user.role = UserRole.ADMIN
                 db.commit()
     except Exception as e:
@@ -41,8 +55,6 @@ def seed_db():
         db.close()
 
 seed_db()
-
-load_dotenv()
 
 app = FastAPI(
     title="AI Interview Assistant",

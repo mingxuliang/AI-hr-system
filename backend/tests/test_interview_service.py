@@ -40,7 +40,7 @@ class TestCreateInterview:
         assert result.position_id == test_position.id
         assert result.status == InterviewStatus.SCHEDULED
         assert result.result == InterviewResult.PENDING
-        assert result.questions == []
+        assert result.questions is None
         assert len(mock_background_tasks.tasks) >= 1  # 背景任务被添加（生成问题 + 可能的邮件通知）
 
     def test_create_interview_with_panel_members(self, db: Session, test_resume: Resume, test_position: Position,
@@ -270,14 +270,15 @@ class TestSubmitInterviewPanelScore:
             comments={"0": "回答很好", "1": "技术扎实"}
         )
 
-        result = interview_service.submit_interview_panel_score(
+        panel, all_submitted = interview_service.submit_interview_panel_score(
             db, test_interview.id, test_interviewer.id, score_data
         )
 
-        assert result is not None
-        assert result.is_submitted is True
-        assert result.scores == {"0": 8, "1": 9}
-        assert result.total_score == 8  # (8 + 9) / 2 = 8.5, round to 8
+        assert panel is not None
+        assert panel.is_submitted is True
+        assert panel.scores == {"0": 8, "1": 9}
+        assert panel.total_score == 8  # (8 + 9) / 2 = 8.5, floor to 8
+        assert all_submitted is True
 
     def test_submit_panel_score_auto_change_status(self, db: Session, test_interview: Interview,
                                                     test_interviewer: User):
@@ -301,12 +302,13 @@ class TestSubmitInterviewPanelScore:
             comments={"0": "优秀", "1": "非常出色"}
         )
 
-        result = interview_service.submit_interview_panel_score(
+        panel, all_submitted = interview_service.submit_interview_panel_score(
             db, test_interview.id, test_interview_panel.interviewer_id, score_data
         )
 
-        assert result.is_submitted is True
-        assert result.scores == {"0": 9, "1": 10}
+        assert panel.is_submitted is True
+        assert panel.scores == {"0": 9, "1": 10}
+        assert all_submitted is True
 
 
 class TestAggregatePanelScores:
@@ -443,7 +445,7 @@ class TestConfirmInterviewResult:
         result = interview_service.confirm_interview_result(db, test_interview.id, "passed")
 
         db.refresh(test_resume)
-        assert test_resume.status == ResumeStatus.COMPLETED
+        assert test_resume.status == ResumeStatus.INTERVIEW_PASSED
         assert test_resume.screening_result == ScreeningResult.PASSED
 
     def test_confirm_result_not_found(self, db: Session):

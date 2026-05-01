@@ -56,7 +56,7 @@ const ResumesList: React.FC = () => {
       setData(res);
 
       // 检查是否有正在解析中的简历
-      const hasProcessing = res.some((r: any) => r.parse_status === 'processing' || r.status === 'pending_screening');
+      const hasProcessing = res.some((r: any) => r.parse_status === 'processing');
       setPollingEnabled(hasProcessing);
     } catch (error) {
       if (!silent) message.error('获取简历列表失败');
@@ -133,7 +133,7 @@ const ResumesList: React.FC = () => {
     request.get('/resumes')
       .then(res => {
         setData(res);
-        const hasProcessing = res.some((r: any) => r.parse_status === 'processing' || r.status === 'pending_screening');
+        const hasProcessing = res.some((r: any) => r.parse_status === 'processing');
         setPollingEnabled(hasProcessing);
       })
       .catch(() => message.error('获取简历列表失败'))
@@ -520,7 +520,7 @@ const ResumesList: React.FC = () => {
         let color = 'default';
         let text = status;
         switch(status) {
-          case 'pending_screening': color = 'processing'; text = '解析中'; break;
+          case 'pending_screening': color = 'warning'; text = '待初筛'; break;
           case 'pending_review': color = 'warning'; text = '待评审'; break;
           case 'pending_dept_review': color = 'cyan'; text = '待部门评审'; break;
           case 'pending_hr_decision': color = 'purple'; text = '待HR决策'; break;
@@ -655,7 +655,7 @@ const ResumesList: React.FC = () => {
                 style={{ width: 150 }}
                 allowClear
               >
-                <Select.Option value="pending_screening">解析中</Select.Option>
+                <Select.Option value="pending_screening">待初筛</Select.Option>
                 <Select.Option value="pending_review">待评审</Select.Option>
                 <Select.Option value="pending_dept_review">待部门评审</Select.Option>
                 <Select.Option value="pending_hr_decision">待HR决策</Select.Option>

@@ -4,6 +4,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { EditOutlined, DeleteOutlined, PlusOutlined, SaveOutlined, CloseOutlined, DownloadOutlined, FilePdfOutlined, FileWordOutlined, LeftOutlined, RightOutlined, CheckCircleOutlined, CheckCircleFilled, CaretRightOutlined, AudioOutlined, LoadingOutlined, ExpandOutlined, CompressOutlined, PlayCircleOutlined, UserOutlined, StopOutlined, ClockCircleOutlined } from '@ant-design/icons';
 import request from '../../utils/request';
 import { useAuth } from '../../contexts/AuthContext';
+import { getMaximizedPdfPreviewUrl } from '../../utils/pdfPreview';
 
 const { Title, Text, Paragraph } = Typography;
 const { TextArea } = Input;
@@ -652,8 +653,11 @@ const InterviewScore: React.FC = () => {
     }
   };
 
-  const fileUrl = interview?.resume?.file_path ? `/${interview.resume.file_path}` : '';
+  const fileUrl = interview?.resume?.file_path
+    ? (interview.resume.file_path.startsWith('/') ? interview.resume.file_path : `/${interview.resume.file_path}`)
+    : '';
   const isPdf = fileUrl.toLowerCase().endsWith('.pdf');
+  const pdfPreviewUrl = isPdf ? getMaximizedPdfPreviewUrl(fileUrl) : '';
 
   if (loading && !interview) {
     return (
@@ -924,8 +928,8 @@ const InterviewScore: React.FC = () => {
           {fileUrl ? (
             isPdf ? (
               <iframe 
-                src={fileUrl} 
-                style={{ width: '100%', height: '100%', border: 'none' }} 
+                src={pdfPreviewUrl}
+                style={{ width: '100%', height: '100%', border: 'none', display: 'block', background: '#fff' }}
                 title="Resume Preview"
               />
             ) : (

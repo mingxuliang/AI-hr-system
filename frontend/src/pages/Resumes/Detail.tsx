@@ -7,13 +7,14 @@ import remarkGfm from 'remark-gfm';
 import { DownloadOutlined, FilePdfOutlined, FileWordOutlined, ArrowLeftOutlined, CloseCircleOutlined, EditOutlined, SaveOutlined, ReloadOutlined, UserOutlined, CheckCircleOutlined, TeamOutlined, SolutionOutlined, ClockCircleOutlined } from '@ant-design/icons';
 import RejectReasonSelector, { REJECT_REASONS } from '../../components/RejectReasonSelector';
 import { useAuth } from '../../contexts/AuthContext';
+import { getMaximizedPdfPreviewUrl } from '../../utils/pdfPreview';
 
 const { Title, Paragraph, Text } = Typography;
 const { TextArea } = Input;
 
 // 状态映射
 const STATUS_MAP: Record<string, { text: string; color: string }> = {
-  pending_screening: { text: '解析中', color: 'processing' },
+  pending_screening: { text: '待初筛', color: 'warning' },
   pending_review: { text: '待评审', color: 'warning' },
   pending_dept_review: { text: '待部门评审', color: 'cyan' },
   pending_hr_decision: { text: '待HR决策', color: 'purple' },
@@ -148,8 +149,9 @@ const ResumeDetail: React.FC = () => {
   }
 
   const parsedData = resume.parsed_data || {};
-  const fileUrl = resume.file_path ? `/${resume.file_path}` : '';
+  const fileUrl = resume.file_path ? (resume.file_path.startsWith('/') ? resume.file_path : `/${resume.file_path}`) : '';
   const isPdf = fileUrl.toLowerCase().endsWith('.pdf');
+  const pdfPreviewUrl = isPdf ? getMaximizedPdfPreviewUrl(fileUrl) : '';
   const statusInfo = getStatusInfo(resume.status, resume.parse_status);
 
   const handleReparse = () => {
@@ -499,8 +501,8 @@ const ResumeDetail: React.FC = () => {
           {fileUrl ? (
             isPdf ? (
               <iframe
-                src={fileUrl}
-                style={{ width: '100%', height: '100%', border: 'none' }}
+                src={pdfPreviewUrl}
+                style={{ width: '100%', height: '100%', border: 'none', display: 'block', background: '#fff' }}
                 title="Resume Preview"
               />
             ) : (
@@ -547,10 +549,16 @@ const ResumeDetail: React.FC = () => {
                          </Form.Item>
                     </Form>
                 ) : (
-                    <>
-                        <Text type="secondary" style={{ marginRight: 16 }}>{resume.email}</Text>
+                    <Space wrap size={12}>
+                        <Text
+                          type="secondary"
+                          ellipsis={{ tooltip: resume.email }}
+                          style={{ maxWidth: 260 }}
+                        >
+                          {resume.email}
+                        </Text>
                         <Text type="secondary">{resume.contact}</Text>
-                    </>
+                    </Space>
                 )}
               </div>
             </div>

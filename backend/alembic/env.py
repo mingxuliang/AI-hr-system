@@ -13,7 +13,7 @@ sys.path.append(os.getcwd())
 
 from app.models.base import Base
 # Import all models here to register them with Base.metadata
-from app.models.models import User, Position, QuestionBank, Resume, Interview
+from app.models import models, workflow_models
 
 load_dotenv()
 

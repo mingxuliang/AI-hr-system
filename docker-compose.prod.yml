@@ -5,12 +5,11 @@ services:
     image: postgres:15-alpine
     container_name: ai_interview_db
     environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - POSTGRES_DB=ai_interview
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-ai_interview}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./init-db:/docker-entrypoint-initdb.d
     restart: always
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
@@ -19,15 +18,20 @@ services:
       retries: 5
 
   backend:
+    build:
+      context: ./backend
     image: ai-interview-backend:latest
     container_name: ai_interview_backend
     environment:
-      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/ai_interview
-      - SECRET_KEY=${SECRET_KEY:-your-secret-key-change-in-production}
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-}
-      - CORS_ORIGINS=*
-      - APP_ENV=production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-ai_interview}
+      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in .env before starting production}
+      INITIAL_ADMIN_EMAIL: ${INITIAL_ADMIN_EMAIL:-admin@example.com}
+      INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:?Set INITIAL_ADMIN_PASSWORD in .env before first production startup}
+      INITIAL_ADMIN_NAME: ${INITIAL_ADMIN_NAME:-System Admin}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost}
+      APP_ENV: production
     volumes:
       - backend_uploads:/app/uploads
     depends_on:
@@ -42,6 +46,8 @@ services:
       start_period: 40s
 
   frontend:
+    build:
+      context: ./frontend
     image: ai-interview-frontend:latest
     container_name: ai_interview_frontend
     ports:
