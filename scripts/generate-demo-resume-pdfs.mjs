@@ -5,7 +5,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = new URL("..", import.meta.url).pathname;
 const uploadDir = join(root, "backend", "uploads", "demo");
-const tempDir = "/tmp/ai-interview-demo-resumes";
+const tempDir = "/tmp/hr-demo-resumes";
 const chromePath =
   process.env.CHROME_PATH || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 

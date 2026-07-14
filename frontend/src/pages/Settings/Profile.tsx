@@ -1,9 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { Button, Card, Divider, Form, Input, Space, Typography, message } from 'antd';
+import { Button, Card, Divider, Form, Input, Space, message } from 'antd';
 import request from '../../utils/request';
 import { useAuth } from '../../contexts/AuthContext';
-
-const { Title, Text } = Typography;
 
 const ProfileSettings: React.FC = () => {
   const { user, refreshUser } = useAuth();
@@ -54,11 +52,6 @@ const ProfileSettings: React.FC = () => {
 
   return (
     <div>
-      <div style={{ marginBottom: 32 }}>
-        <Title level={2} style={{ margin: 0 }}>个人设置</Title>
-        <Text type="secondary">更新你的个人资料与登录密码</Text>
-      </div>
-
       <Space direction="vertical" size="large" style={{ width: '100%' }}>
         <Card title="个人资料" styles={{ body: { paddingTop: 8 } }}>
           <Form form={profileForm} layout="vertical">

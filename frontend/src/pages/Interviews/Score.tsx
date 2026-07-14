@@ -1006,12 +1006,12 @@ const InterviewScore: React.FC = () => {
                       border: `1px solid ${member.submitted ? '#86EFAC' : '#FCD34D'}`
                     }}
                   >
-                    <Avatar size="small" icon={<UserOutlined />} style={{ background: member.submitted ? '#10B981' : '#F59E0B' }} />
+                    <Avatar size="small" icon={<UserOutlined />} style={{ background: member.submitted ? '#10B981' : '#2563EB' }} />
                     <span style={{ fontWeight: 500 }}>{member.name}</span>
                     {member.submitted ? (
                       <Tag color="success" style={{ margin: 0, border: 'none' }}>已提交</Tag>
                     ) : (
-                      <Tag color="warning" style={{ margin: 0, border: 'none' }}>未提交</Tag>
+                      <Tag color="blue" style={{ margin: 0, border: 'none' }}>未提交</Tag>
                     )}
                   </div>
                 ))}

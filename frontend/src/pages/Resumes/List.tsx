@@ -4,7 +4,7 @@ import { PlusOutlined, EyeOutlined, TeamOutlined, DeleteOutlined, UploadOutlined
 import request from '../../utils/request';
 import { useNavigate } from 'react-router-dom';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -498,8 +498,11 @@ const ResumesList: React.FC = () => {
       sorter: (a: any, b: any) => a.match_score - b.match_score,
       render: (score: number) => (
         <span style={{ 
-          color: score >= 80 ? '#10B981' : score >= 60 ? '#F59E0B' : '#EF4444',
-          fontWeight: 600 
+          color: '#2563EB',
+          fontWeight: 600,
+          background: '#EFF6FF',
+          padding: '2px 10px',
+          borderRadius: 6,
         }}>
           {score > 0 ? `${score}分` : '-'}
         </span>
@@ -520,18 +523,18 @@ const ResumesList: React.FC = () => {
         let color = 'default';
         let text = status;
         switch(status) {
-          case 'pending_screening': color = 'warning'; text = '待初筛'; break;
-          case 'pending_review': color = 'warning'; text = '待评审'; break;
-          case 'pending_dept_review': color = 'cyan'; text = '待部门评审'; break;
-          case 'pending_hr_decision': color = 'purple'; text = '待HR决策'; break;
-          case 'auto_rejected_pending_review': color = 'orange'; text = 'AI建议淘汰'; break;
-          case 'pending_interview': color = 'geekblue'; text = '待面试'; break;
-          case 'interview_passed': color = 'lime'; text = '面试通过'; break;
-          case 'interview_failed': color = 'magenta'; text = '面试未通过'; break;
+          case 'pending_screening': color = 'blue'; text = '待初筛'; break;
+          case 'pending_review': color = 'blue'; text = '待评审'; break;
+          case 'pending_dept_review': color = 'blue'; text = '待部门评审'; break;
+          case 'pending_hr_decision': color = 'blue'; text = '待HR决策'; break;
+          case 'auto_rejected_pending_review': color = 'purple'; text = 'AI建议淘汰'; break;
+          case 'pending_interview': color = 'blue'; text = '待面试'; break;
+          case 'interview_passed': color = 'blue'; text = '面试通过'; break;
+          case 'interview_failed': color = 'error'; text = '面试未通过'; break;
           case 'offer_pending': color = 'blue'; text = 'Offer待确认'; break;
           case 'offer_accepted': color = 'success'; text = '已接受Offer'; break;
           case 'offer_rejected': color = 'error'; text = '已拒绝Offer'; break;
-          case 'waitlist': color = 'gold'; text = '备选'; break;
+          case 'waitlist': color = 'blue'; text = '备选'; break;
           case 'completed': color = 'success'; text = '已完成'; break;
           case 'rejected': color = 'error'; text = '已淘汰'; break;
           case 'hired': color = 'success'; text = '已录用'; break;
@@ -609,50 +612,22 @@ const ResumesList: React.FC = () => {
 
   return (
     <div>
-      <div style={{ marginBottom: 32, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-        <div>
-          <Title level={2} style={{ margin: 0, fontWeight: 700 }}>
-            {user?.role === 'interviewer' ? '我的待评审' : '简历管理'}
-          </Title>
-          <Text type="secondary">
-            {user?.role === 'interviewer' ? '被指派给您的待评审简历' : '管理候选人简历及面试流程'}
-          </Text>
-        </div>
-        <Space>
+      <div className="filter-bar">
           {user?.role !== 'interviewer' && (
             <>
-              <Button icon={pollingEnabled ? <SyncOutlined spin /> : <ReloadOutlined />} onClick={() => fetchResumes()}>
-                {pollingEnabled ? '解析中...' : '刷新'}
-              </Button>
-              <Button type="primary" icon={<PlusOutlined />} onClick={handleUploadClick} size="large" style={{ borderRadius: '8px' }}>上传简历</Button>
-            </>
-          )}
-          {user?.role === 'interviewer' && (
-            <Button icon={pollingEnabled ? <SyncOutlined spin /> : <ReloadOutlined />} onClick={() => fetchResumes()}>
-              {pollingEnabled ? '解析中...' : '刷新'}
-            </Button>
-          )}
-        </Space>
-      </div>
-
-      {user?.role !== 'interviewer' && (
-        <Card style={{ marginBottom: 24, borderRadius: '8px' }} bodyStyle={{ padding: '24px' }}>
-          <Form layout="inline">
-            <Form.Item label="候选人">
               <Input
-                placeholder="请输入姓名"
+                placeholder="搜索候选人姓名"
                 value={searchName}
                 onChange={e => setSearchName(e.target.value)}
-                style={{ width: 200 }}
+                style={{ width: 220 }}
                 allowClear
+                prefix={<SearchOutlined style={{ color: '#94A3B8' }} />}
               />
-            </Form.Item>
-            <Form.Item label="状态">
               <Select
-                placeholder="请选择状态"
+                placeholder="全部状态"
                 value={searchStatus}
                 onChange={val => setSearchStatus(val)}
-                style={{ width: 150 }}
+                style={{ width: 160 }}
                 allowClear
               >
                 <Select.Option value="pending_screening">待初筛</Select.Option>
@@ -671,39 +646,36 @@ const ResumesList: React.FC = () => {
                 <Select.Option value="rejected">已淘汰</Select.Option>
                 <Select.Option value="hired">已录用</Select.Option>
               </Select>
-            </Form.Item>
-            {selectedRowKeys.length > 0 && (
-              <>
-                <Form.Item>
-                  <span style={{ color: '#64748B' }}>已选 {selectedRowKeys.length} 项</span>
-                </Form.Item>
-                <Form.Item>
-                  <Button danger onClick={handleBatchReject}>批量淘汰</Button>
-                </Form.Item>
-                <Form.Item>
-                  <Button danger onClick={handleBatchDelete}>批量删除</Button>
-                </Form.Item>
-                <Form.Item>
-                  <Button onClick={() => setSelectedRowKeys([])}>取消选择</Button>
-                </Form.Item>
-              </>
-            )}
-            <Form.Item>
-              <Space>
-                <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch}>搜索</Button>
-                <Button onClick={handleReset}>重置</Button>
-              </Space>
-            </Form.Item>
-          </Form>
-        </Card>
-      )}
+              <Button icon={<SearchOutlined />} onClick={handleSearch}>搜索</Button>
+              <Button onClick={handleReset}>重置</Button>
+            </>
+          )}
 
-      <Table 
-        columns={columns} 
-        dataSource={data} 
-        loading={loading} 
-        rowKey="id" 
-        pagination={{ pageSize: 10, showSizeChanger: true }}
+          {selectedRowKeys.length > 0 && (
+            <Space size={8}>
+              <span style={{ color: '#64748B', fontSize: 13 }}>已选 {selectedRowKeys.length} 项</span>
+              <Button size="small" danger onClick={handleBatchReject}>批量淘汰</Button>
+              <Button size="small" danger onClick={handleBatchDelete}>批量删除</Button>
+              <Button size="small" onClick={() => setSelectedRowKeys([])}>取消</Button>
+            </Space>
+          )}
+
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+            <Button icon={pollingEnabled ? <SyncOutlined spin /> : <ReloadOutlined />} onClick={() => fetchResumes()}>
+              {pollingEnabled ? '解析中' : '刷新'}
+            </Button>
+            {user?.role !== 'interviewer' && (
+              <Button type="primary" icon={<PlusOutlined />} onClick={handleUploadClick}>上传简历</Button>
+            )}
+          </div>
+      </div>
+
+      <Table
+        columns={columns}
+        dataSource={data}
+        loading={loading}
+        rowKey="id"
+        pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (t) => `共 ${t} 条` }}
         rowSelection={{
           selectedRowKeys,
           onChange: setSelectedRowKeys,

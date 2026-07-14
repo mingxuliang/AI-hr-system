@@ -141,7 +141,7 @@ const PublicReview: React.FC = () => {
           <Descriptions.Item label="邮箱">{resume.email}</Descriptions.Item>
           <Descriptions.Item label="联系电话">{resume.contact}</Descriptions.Item>
           <Descriptions.Item label="匹配度评分">
-            <Tag color={resume.match_score >= 80 ? 'green' : resume.match_score >= 60 ? 'blue' : 'orange'}>
+            <Tag color={resume.match_score >= 80 ? 'green' : resume.match_score >= 60 ? 'blue' : 'blue'}>
               {resume.match_score}分
             </Tag>
           </Descriptions.Item>

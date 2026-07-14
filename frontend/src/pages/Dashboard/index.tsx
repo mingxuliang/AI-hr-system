@@ -18,7 +18,7 @@ import 'dayjs/locale/zh-cn';
 dayjs.extend(relativeTime);
 dayjs.locale('zh-cn');
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 const { TabPane } = Tabs;
 const { Option } = Select;
 
@@ -350,11 +350,6 @@ const Dashboard: React.FC = () => {
 
   return (
     <div>
-      <div style={{ marginBottom: 32 }}>
-        <Title level={2} style={{ margin: 0, fontWeight: 700 }}>数据分析</Title>
-        <Text type="secondary">招聘数据概览与深度分析</Text>
-      </div>
-
       <Row gutter={[24, 24]}>
         {stats.map((stat, index) => (
           <Col xs={24} sm={12} lg={6} key={index}>

@@ -109,8 +109,8 @@ const PublicJobDetail: React.FC = () => {
             <Title level={2} style={{ margin: 0, color: '#0F172A' }}>{position.title}</Title>
             <div style={{ marginTop: 12, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
               <Tag color="blue">{position.department || '研发部'}</Tag>
-              <Tag color="green">{position.location || '北京'}</Tag>
-              <Tag color="orange">{position.salary_range || '面议'}</Tag>
+              <Tag color="blue">{position.location || '北京'}</Tag>
+              <Tag color="blue">{position.salary_range || '面议'}</Tag>
             </div>
           </div>
 
@@ -207,17 +207,13 @@ const PublicJobDetail: React.FC = () => {
               </Form.Item>
 
               <Form.Item style={{ marginTop: 32 }}>
-                <Button type="primary" htmlType="submit" loading={submitting} block style={{ height: 48, fontSize: 16 }}>
+                <Button type="primary" htmlType="submit" loading={submitting} block size="large">
                   立即投递
                 </Button>
               </Form.Item>
             </Form>
           </div>
         </Card>
-        
-        <div style={{ textAlign: 'center', marginTop: 32, color: '#94A3B8' }}>
-          <Text type="secondary">Powered by AI Interview System</Text>
-        </div>
       </div>
     </div>
   );

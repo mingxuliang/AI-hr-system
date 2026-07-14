@@ -56,10 +56,19 @@ def seed_db():
 
 seed_db()
 
+# Hide OpenAPI / Swagger fingerprints unless explicitly enabled.
+# Production must not expose /docs, /redoc, or /openapi.json.
+_app_env = os.getenv("APP_ENV", "development").lower()
+_enable_api_docs = os.getenv("ENABLE_API_DOCS", "").lower() in ("1", "true", "yes")
+_expose_docs = _enable_api_docs and _app_env != "production"
+
 app = FastAPI(
-    title="AI Interview Assistant",
-    description="API for AI Interview Assistant System",
-    version="1.0.0"
+    title=os.getenv("API_TITLE", "API"),
+    description=os.getenv("API_DESCRIPTION", ""),
+    version=os.getenv("API_VERSION", "1.0.0"),
+    docs_url="/docs" if _expose_docs else None,
+    redoc_url="/redoc" if _expose_docs else None,
+    openapi_url="/openapi.json" if _expose_docs else None,
 )
 
 # Ensure uploads directory exists
@@ -77,6 +86,18 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def strip_server_fingerprint(request, call_next):
+    """Remove framework fingerprints from response headers."""
+    response = await call_next(request)
+    # Drop uvicorn / starlette identifying headers when present
+    if "server" in response.headers:
+        del response.headers["server"]
+    if "x-powered-by" in response.headers:
+        del response.headers["x-powered-by"]
+    return response
 
 app.include_router(auth.router, prefix="/api")
 app.include_router(positions.router, prefix="/api")
@@ -108,4 +129,4 @@ init_builtin_workflows_on_startup()
 
 @app.get("/")
 def read_root():
-    return {"message": "Welcome to AI Interview Assistant API"}
+    return {"status": "ok"}

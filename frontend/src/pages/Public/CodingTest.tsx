@@ -11,7 +11,7 @@ const { TextArea } = Input;
 const testTypeLabels: Record<string, { label: string; color: string }> = {
   algorithm: { label: '算法笔试', color: 'blue' },
   choice: { label: '选择题', color: 'green' },
-  essay: { label: '简答题', color: 'orange' },
+  essay: { label: '简答题', color: 'blue' },
 };
 
 const difficultyLabels: Record<string, string> = {
@@ -481,7 +481,7 @@ const PublicCodingTest: React.FC = () => {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#fff' }}>
             <Space>
               <span style={{ fontSize: 16, fontWeight: 600 }}>第 {index + 1} 题</span>
-              {q.is_multiple && <Tag color="gold">多选</Tag>}
+              {q.is_multiple && <Tag color="blue">多选</Tag>}
               {isAnswered && <CheckCircleOutlined style={{ color: '#52c41a' }} />}
             </Space>
             <Tooltip title={isMarked ? '取消标记' : '标记此题'}>

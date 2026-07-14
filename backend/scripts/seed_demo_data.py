@@ -49,7 +49,7 @@ from app.models.workflow_models import Workflow, WorkflowStatus
 
 
 DEMO_EMAIL_DOMAIN = "talent.example"
-DEMO_USER_DOMAIN = "demo.ai-interview.local"
+DEMO_USER_DOMAIN = "demo.local"
 
 
 def utc_days_ago(days: int, hour: int = 10) -> datetime:
@@ -370,7 +370,7 @@ def seed_reviews_and_interviews(db, users: dict[str, User], resumes: list[Resume
             interview_type="video" if category == "technical" else "onsite",
             interview_category=category,
             interview_location="上海总部 12F / 腾讯会议",
-            meeting_link="https://meeting.tencent.com/demo-ai-interview",
+            meeting_link="https://meeting.example.com/demo",
             questions=[
                 {"title": "项目深挖", "content": "请介绍最近一个复杂项目的架构设计。", "score": 10},
                 {"title": "问题解决", "content": "如果 AI 简历解析失败率升高，你会如何定位？", "score": 10},
@@ -649,7 +649,7 @@ def main() -> None:
         seed_reviews_and_interviews(db, users, resumes)
         seed_offers_and_tests(db, admin, resumes, positions, banks)
         seed_workflows_and_config(db)
-        print("Seeded demo data for AI Interview screenshots.")
+        print("Seeded demo data.")
         print("Demo admin:", admin.email)
         print("Demo interviewers:", ", ".join(user.email for user in users.values()))
     finally:

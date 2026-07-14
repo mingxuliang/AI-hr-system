@@ -78,10 +78,17 @@ def process_resume_task(payload: Dict[str, Any]):
         position_desc = f"{position.title}\n{position.description}\n{position.requirements}"
 
         # 获取其他相近岗位（状态为 OPEN 或 PUBLISHED，排除当前岗位）
-        other_positions = db.query(Position).filter(
-            Position.id != position_id,
-            Position.status.in_([PositionStatus.OPEN, PositionStatus.PUBLISHED])
-        ).limit(5).all()
+        try:
+            other_positions = db.query(Position).filter(
+                Position.id != position_id,
+                Position.status.in_([PositionStatus.OPEN, PositionStatus.PUBLISHED])
+            ).limit(5).all()
+        except Exception:
+            db.rollback()
+            other_positions = db.query(Position).filter(
+                Position.id != position_id,
+                Position.status == PositionStatus.OPEN
+            ).limit(5).all()
 
         # 构建其他岗位信息字符串
         other_positions_info = ""
@@ -196,6 +203,7 @@ def process_resume_task(payload: Dict[str, Any]):
         db.commit()
 
     except Exception as e:
+        db.rollback()
         try:
             resume = db.query(Resume).filter(Resume.id == resume_id).first()
             if resume:

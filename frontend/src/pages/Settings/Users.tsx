@@ -1,9 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Button, Space, message, Tag, Modal, Form, Input, Select, Card, Typography, Popconfirm, Tooltip } from 'antd';
+import { Table, Button, Space, message, Tag, Modal, Form, Input, Select, Card, Popconfirm, Tooltip } from 'antd';
 import { PlusOutlined, ReloadOutlined, EditOutlined, DeleteOutlined, StopOutlined, CheckCircleOutlined } from '@ant-design/icons';
 import request from '../../utils/request';
-
-const { Title, Text } = Typography;
 
 interface User {
   id: string;
@@ -209,11 +207,7 @@ const UsersList: React.FC = () => {
 
   return (
     <div>
-      <div style={{ marginBottom: 32, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-        <div>
-          <Title level={2} style={{ margin: 0 }}>用户管理</Title>
-          <Text type="secondary">管理系统用户及权限分配</Text>
-        </div>
+      <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'flex-end' }}>
         <Space>
           {selectedRowKeys.length > 0 && (
             <>

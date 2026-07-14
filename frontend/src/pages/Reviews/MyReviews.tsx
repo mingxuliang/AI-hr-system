@@ -59,7 +59,7 @@ const MyReviews: React.FC = () => {
       dataIndex: 'match_score',
       key: 'match_score',
       render: (score: number) => (
-        <Tag color={score >= 80 ? 'green' : score >= 60 ? 'orange' : 'red'}>
+        <Tag color={score >= 80 ? 'green' : score >= 60 ? 'blue' : 'blue'}>
           {score}%
         </Tag>
       ),

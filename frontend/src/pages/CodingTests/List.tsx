@@ -33,7 +33,7 @@ const defaultTestCases = [
 const testTypeLabels: Record<string, { label: string; color: string }> = {
   algorithm: { label: '算法', color: 'blue' },
   choice: { label: '选择题', color: 'green' },
-  essay: { label: '简答题', color: 'orange' },
+  essay: { label: '简答题', color: 'blue' },
 };
 
 const CodingTestsList: React.FC = () => {
@@ -728,7 +728,7 @@ const CodingTestsList: React.FC = () => {
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <Text strong>{i + 1}. {q.question}</Text>
                                 {isEssay && questionScore !== undefined && (
-                                  <Tag color={questionScore >= maxScore * 0.6 ? 'green' : 'orange'} style={{ border: 'none' }}>
+                                  <Tag color={questionScore >= maxScore * 0.6 ? 'green' : 'blue'} style={{ border: 'none' }}>
                                     得分: {questionScore}/{maxScore}
                                   </Tag>
                                 )}

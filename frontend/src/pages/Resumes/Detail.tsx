@@ -14,14 +14,14 @@ const { TextArea } = Input;
 
 // 状态映射
 const STATUS_MAP: Record<string, { text: string; color: string }> = {
-  pending_screening: { text: '待初筛', color: 'warning' },
-  pending_review: { text: '待评审', color: 'warning' },
-  pending_dept_review: { text: '待部门评审', color: 'cyan' },
-  pending_hr_decision: { text: '待HR决策', color: 'purple' },
-  auto_rejected_pending_review: { text: 'AI建议淘汰', color: 'orange' },
-  pending_interview: { text: '待面试', color: 'geekblue' },
-  interview_passed: { text: '面试通过', color: 'lime' },
-  interview_failed: { text: '面试未通过', color: 'magenta' },
+  pending_screening: { text: '待初筛', color: 'blue' },
+  pending_review: { text: '待评审', color: 'blue' },
+  pending_dept_review: { text: '待部门评审', color: 'blue' },
+  pending_hr_decision: { text: '待HR决策', color: 'blue' },
+  auto_rejected_pending_review: { text: 'AI建议淘汰', color: 'purple' },
+  pending_interview: { text: '待面试', color: 'blue' },
+  interview_passed: { text: '面试通过', color: 'blue' },
+  interview_failed: { text: '面试未通过', color: 'error' },
   offer_pending: { text: 'Offer待确认', color: 'blue' },
   offer_accepted: { text: '已接受Offer', color: 'success' },
   offer_rejected: { text: '已拒绝Offer', color: 'error' },
@@ -29,7 +29,7 @@ const STATUS_MAP: Record<string, { text: string; color: string }> = {
   completed: { text: '已完成', color: 'success' },
   rejected: { text: '已淘汰', color: 'error' },
   hired: { text: '已录用', color: 'success' },
-  waitlist: { text: '备选', color: 'gold' },
+  waitlist: { text: '备选', color: 'blue' },
 };
 
 const ResumeDetail: React.FC = () => {
@@ -450,7 +450,7 @@ const ResumeDetail: React.FC = () => {
                             {review.is_completed ? '已完成' : '待评审'}
                           </Tag>
                           {review.recommendation && review.is_completed && (
-                            <Tag color={review.recommendation === 'recommend' ? 'green' : review.recommendation === 'not_recommend' ? 'red' : 'gold'}>
+                            <Tag color={review.recommendation === 'recommend' ? 'green' : review.recommendation === 'not_recommend' ? 'red' : 'blue'}>
                               {review.recommendation === 'recommend' ? '推荐' : review.recommendation === 'not_recommend' ? '不推荐' : '待定'}
                             </Tag>
                           )}
@@ -572,7 +572,7 @@ const ResumeDetail: React.FC = () => {
                     percent={resume.match_score}
                     width={50}
                     format={percent => <span style={{ fontSize: 14, fontWeight: 700, color: '#0F172A' }}>{percent}%</span>}
-                    strokeColor={resume.match_score >= 80 ? '#10B981' : resume.match_score >= 60 ? '#F59E0B' : '#EF4444'}
+                    strokeColor="#2563EB"
                   />
                 </div>
               </div>
@@ -672,7 +672,7 @@ const ResumeDetail: React.FC = () => {
                               percent={match.match_score}
                               width={45}
                               format={percent => <span style={{ fontSize: 12, fontWeight: 600 }}>{percent}%</span>}
-                              strokeColor={match.match_score >= 80 ? '#10B981' : match.match_score >= 60 ? '#F59E0B' : '#EF4444'}
+                              strokeColor="#2563EB"
                             />
                             {(userRole === 'admin' || userRole === 'hr') && match.position_id && (
                               <Button

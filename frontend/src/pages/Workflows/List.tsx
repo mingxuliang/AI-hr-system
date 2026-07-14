@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Card, Button, Space, Typography, message, Modal, Form, Input, Select,
+  Card, Button, Space, message, Modal, Form, Input, Select,
   Table, Tag, Popconfirm, Tooltip
 } from 'antd';
 import {
@@ -11,7 +11,6 @@ import { useNavigate } from 'react-router-dom';
 import request from '../../utils/request';
 import { useAuth } from '../../contexts/AuthContext';
 
-const { Title, Text } = Typography;
 const { Option } = Select;
 
 interface Workflow {
@@ -241,28 +240,25 @@ const WorkflowsList: React.FC = () => {
 
   return (
     <div>
-      <div style={{ marginBottom: 24 }}>
-        <Title level={2} style={{ margin: 0 }}>工作流编排</Title>
-        <Text type="secondary">可视化设计和编排自动化工作流</Text>
-      </div>
-
-      <Card
-        extra={
-          isHR && (
+      {isHR && (
+        <div className="filter-bar">
+          <div style={{ marginLeft: 'auto' }}>
             <Button type="primary" icon={<PlusOutlined />} onClick={handleCreate}>
               创建工作流
             </Button>
-          )
-        }
-      >
+          </div>
+        </div>
+      )}
+
+      <div style={{ background: '#fff', borderRadius: 16, border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}>
         <Table
           columns={columns}
           dataSource={workflows}
           rowKey="id"
           loading={loading}
-          pagination={{ pageSize: 10 }}
+          pagination={{ pageSize: 10, showTotal: (t) => `共 ${t} 条` }}
         />
-      </Card>
+      </div>
 
       <Modal
         title="创建工作流"

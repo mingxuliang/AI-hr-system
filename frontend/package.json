@@ -1,8 +1,8 @@
 {
-  "name": "ai-interview-frontend",
+  "name": "ai-hr-frontend",
   "private": true,
   "version": "1.0.0",
-  "description": "Frontend application for AI Interview, an open-source intelligent recruiting management system.",
+  "description": "AI-HR frontend application",
   "type": "module",
   "scripts": {
     "dev": "vite",

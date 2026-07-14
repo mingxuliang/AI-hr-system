@@ -2,7 +2,7 @@ from sqlalchemy import Column, String, Boolean, DateTime, Text, Enum, JSON, Inte
 from sqlalchemy.dialects.postgresql import UUID, ARRAY
 import uuid
 from datetime import datetime
-from app.models.base import Base
+from app.models.base import Base, pg_enum
 import enum
 from sqlalchemy.orm import relationship
 
@@ -43,7 +43,7 @@ class Workflow(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String, nullable=False)
     description = Column(Text)
-    status = Column(Enum(WorkflowStatus), default=WorkflowStatus.DRAFT)
+    status = Column(pg_enum(WorkflowStatus, 'workflowstatus'), default=WorkflowStatus.DRAFT)
     
     graph = Column(JSON, default=dict)
     variables = Column(JSON, default=dict)
@@ -70,7 +70,7 @@ class WorkflowNode(Base):
     workflow_id = Column(UUID(as_uuid=True), ForeignKey("workflows.id"), nullable=False)
     
     node_id = Column(String, nullable=False)
-    node_type = Column(Enum(NodeType), nullable=False)
+    node_type = Column(pg_enum(NodeType, 'nodetype'), nullable=False)
     name = Column(String)
     description = Column(Text)
     
@@ -109,7 +109,7 @@ class WorkflowExecution(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     workflow_id = Column(UUID(as_uuid=True), ForeignKey("workflows.id"), nullable=False)
     
-    status = Column(Enum(ExecutionStatus), default=ExecutionStatus.PENDING)
+    status = Column(pg_enum(ExecutionStatus, 'workflowexecutionstatus'), default=ExecutionStatus.PENDING)
     trigger_type = Column(String, default="manual")
     triggered_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     

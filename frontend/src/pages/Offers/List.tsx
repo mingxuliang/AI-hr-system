@@ -14,7 +14,7 @@ import { useNavigate } from 'react-router-dom';
 import request from '../../utils/request';
 import dayjs from 'dayjs';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 const { TextArea } = Input;
 const { Option } = Select;
 const { RangePicker } = DatePicker;
@@ -75,8 +75,8 @@ interface OfferStats {
 
 const statusConfig: Record<string, { color: string; text: string }> = {
   draft: { color: 'default', text: '草稿' },
-  pending: { color: 'processing', text: '待发送' },
-  sent: { color: 'warning', text: '已发送' },
+  pending: { color: 'blue', text: '待发送' },
+  sent: { color: 'processing', text: '已发送' },
   accepted: { color: 'success', text: '已接受' },
   rejected: { color: 'error', text: '已拒绝' },
   expired: { color: 'default', text: '已过期' },
@@ -505,77 +505,62 @@ const OffersList: React.FC = () => {
 
   return (
     <div>
-      <div style={{ marginBottom: 24 }}>
-        <Title level={2} style={{ margin: 0 }}>Offer管理</Title>
-        <Text type="secondary">管理候选人录用通知</Text>
-      </div>
-
       {stats && (
-        <Row gutter={16} style={{ marginBottom: 24 }}>
-          <Col xs={12} sm={6}>
-            <Card>
-              <Statistic title="总Offer数" value={stats.total_offers} />
-            </Card>
-          </Col>
-          <Col xs={12} sm={6}>
-            <Card>
-              <Statistic title="待处理" value={stats.pending_offers + stats.sent_offers} valueStyle={{ color: '#faad14' }} />
-            </Card>
-          </Col>
-          <Col xs={12} sm={6}>
-            <Card>
-              <Statistic title="已接受" value={stats.accepted_offers} valueStyle={{ color: '#52c41a' }} />
-            </Card>
-          </Col>
-          <Col xs={12} sm={6}>
-            <Card>
-              <Statistic 
-                title="接受率" 
-                value={stats.acceptance_rate} 
-                suffix="%" 
-                valueStyle={{ color: stats.acceptance_rate >= 50 ? '#52c41a' : '#ff4d4f' }}
-              />
-            </Card>
-          </Col>
+        <Row gutter={16} style={{ marginBottom: 16 }}>
+          {[
+            { label: '总Offer数', value: stats.total_offers, color: '#2563EB', bg: '#EFF6FF' },
+            { label: '待处理', value: stats.pending_offers + stats.sent_offers, color: '#2563EB', bg: '#EFF6FF' },
+            { label: '已接受', value: stats.accepted_offers, color: '#059669', bg: '#ECFDF5' },
+            { label: '接受率', value: `${stats.acceptance_rate}%`, color: stats.acceptance_rate >= 50 ? '#059669' : '#DC2626', bg: stats.acceptance_rate >= 50 ? '#ECFDF5' : '#FEF2F2' },
+          ].map((s) => (
+            <Col xs={12} sm={6} key={s.label}>
+              <div style={{ background: '#fff', border: '1px solid var(--border-color)', borderRadius: 12, padding: '16px 20px', boxShadow: 'var(--shadow-sm)', borderTop: `3px solid ${s.color}` }}>
+                <div style={{ fontSize: 12, color: '#64748B', fontWeight: 500, marginBottom: 8 }}>{s.label}</div>
+                <div style={{ fontSize: 28, fontWeight: 700, color: s.color, lineHeight: 1 }}>{s.value}</div>
+              </div>
+            </Col>
+          ))}
         </Row>
       )}
 
-      <Card>
-        <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}>
-          <Space wrap>
-            <Input.Search
-              placeholder="搜索候选人/岗位"
-              allowClear
-              style={{ width: 200 }}
-              onSearch={setSearchText}
-              onChange={(e) => !e.target.value && setSearchText('')}
-            />
-            <Select
-              placeholder="状态筛选"
-              allowClear
-              style={{ width: 120 }}
-              onChange={setStatusFilter}
-            >
-              {Object.entries(statusConfig).map(([key, value]) => (
-                <Option key={key} value={key}>{value.text}</Option>
-              ))}
-            </Select>
-            <Button icon={<ReloadOutlined />} onClick={() => { fetchOffers(); fetchStats(); }}>刷新</Button>
-            {selectedRowKeys.length > 0 && (
-              <>
-                <span style={{ color: '#64748B', lineHeight: '32px' }}>已选 {selectedRowKeys.length} 项</span>
-                <Button type="primary" onClick={handleBatchSend}>批量发送</Button>
-                <Button danger onClick={handleBatchDelete}>批量删除</Button>
-                <Button onClick={() => setSelectedRowKeys([])}>取消选择</Button>
-              </>
-            )}
+      <div className="filter-bar">
+        <Input.Search
+          placeholder="搜索候选人/岗位"
+          allowClear
+          style={{ width: 240 }}
+          onSearch={setSearchText}
+          onChange={(e) => !e.target.value && setSearchText('')}
+        />
+        <Select
+          placeholder="全部状态"
+          allowClear
+          style={{ width: 140 }}
+          onChange={setStatusFilter}
+        >
+          {Object.entries(statusConfig).map(([key, value]) => (
+            <Option key={key} value={key}>{value.text}</Option>
+          ))}
+        </Select>
+        <Button icon={<ReloadOutlined />} onClick={() => { fetchOffers(); fetchStats(); }}>刷新</Button>
+
+        {selectedRowKeys.length > 0 && (
+          <Space size={8}>
+            <span style={{ color: '#64748B', fontSize: 13 }}>已选 {selectedRowKeys.length} 项</span>
+            <Button size="small" type="primary" onClick={handleBatchSend}>批量发送</Button>
+            <Button size="small" danger onClick={handleBatchDelete}>批量删除</Button>
+            <Button size="small" onClick={() => setSelectedRowKeys([])}>取消</Button>
           </Space>
+        )}
+
+        <div style={{ marginLeft: 'auto' }}>
           <Button type="primary" icon={<PlusOutlined />} onClick={() => {
             createForm.resetFields();
             setCreateModalVisible(true);
           }}>新建Offer</Button>
         </div>
+      </div>
 
+      <div style={{ background: '#fff', borderRadius: 16, border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}>
         <Table
           columns={columns}
           dataSource={offers}
@@ -593,7 +578,7 @@ const OffersList: React.FC = () => {
             onChange: (page, pageSize) => setPagination(prev => ({ ...prev, current: page, pageSize })),
           }}
         />
-      </Card>
+      </div>
 
       <Modal
         title="新建Offer"

@@ -385,7 +385,7 @@ const InterviewsList: React.FC = () => {
       render: (status: string) => {
         const map: Record<string, {text: string, color: string}> = {
           scheduled: { text: '待面试', color: 'blue' },
-          in_progress: { text: '面试中', color: 'orange' },
+          in_progress: { text: '面试中', color: 'blue' },
           analyzing: { text: '分析中', color: 'purple' },
           completed: { text: '已完成', color: 'green' },
           cancelled: { text: '已取消', color: 'default' }
@@ -418,7 +418,7 @@ const InterviewsList: React.FC = () => {
 
           {(record.status === 'completed' || isPendingConfirmation) && (
              <Tooltip title={isPendingConfirmation ? "确认结果" : "查看结果"}>
-               <Button type="text" icon={<EyeOutlined style={{ color: isPendingConfirmation ? '#F59E0B' : '#10B981' }} />} onClick={() => navigate(`/interviews/${record.id}/result`)} />
+               <Button type="text" icon={<EyeOutlined style={{ color: isPendingConfirmation ? '#2563EB' : '#10B981' }} />} onClick={() => navigate(`/interviews/${record.id}/result`)} />
              </Tooltip>
           )}
 
@@ -526,7 +526,7 @@ const InterviewsList: React.FC = () => {
               key: 'match_score',
               render: (score: number) => (
                 <span style={{ 
-                  color: score >= 80 ? '#10B981' : score >= 60 ? '#F59E0B' : '#EF4444',
+                  color: '#2563EB',
                   fontWeight: 600 
                 }}>
                   {score > 0 ? `${score}分` : '-'}

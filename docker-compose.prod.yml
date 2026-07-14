@@ -20,8 +20,8 @@ services:
   backend:
     build:
       context: ./backend
-    image: ai-interview-backend:latest
-    container_name: ai_interview_backend
+    image: hr-api:latest
+    container_name: hr_api
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-ai_interview}
       SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in .env before starting production}
@@ -32,6 +32,10 @@ services:
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost}
       APP_ENV: production
+      ENABLE_API_DOCS: "false"
+      API_TITLE: API
+      API_DESCRIPTION: ""
+      API_VERSION: "1.0.0"
     volumes:
       - backend_uploads:/app/uploads
     depends_on:
@@ -48,8 +52,8 @@ services:
   frontend:
     build:
       context: ./frontend
-    image: ai-interview-frontend:latest
-    container_name: ai_interview_frontend
+    image: hr-web:latest
+    container_name: hr_web
     ports:
       - "80:80"
     depends_on:

@@ -107,7 +107,7 @@ const OfferConfirm: React.FC = () => {
       SENT: { color: 'blue', text: '已发送' },
       ACCEPTED: { color: 'success', text: '已接受' },
       REJECTED: { color: 'error', text: '已拒绝' },
-      EXPIRED: { color: 'warning', text: '已过期' },
+      EXPIRED: { color: 'blue', text: '已过期' },
       WITHDRAWN: { color: 'default', text: '已撤回' }
     };
     const config = statusMap[status] || { color: 'default', text: status };

@@ -100,7 +100,7 @@ def _post_graphql(endpoint: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         method="POST",
         headers={
             "Content-Type": "application/json",
-            "User-Agent": "ai-interview-assistant/1.0",
+            "User-Agent": "hr-assistant/1.0",
         },
     )
     try:

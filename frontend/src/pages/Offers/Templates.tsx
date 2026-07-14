@@ -9,7 +9,7 @@ import {
 import request from '../../utils/request';
 import dayjs from 'dayjs';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 const { TextArea } = Input;
 const { Option } = Select;
 
@@ -241,38 +241,33 @@ const OfferTemplates: React.FC = () => {
 
   return (
     <div>
-      <div style={{ marginBottom: 24 }}>
-        <Title level={2} style={{ margin: 0 }}>Offer模板管理</Title>
-        <Text type="secondary">管理Offer模板，新建Offer时可自动填充</Text>
-      </div>
-
-      <Card>
-        <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between' }}>
-          <Space>
-            <Text>共 {templates.length} 个模板</Text>
-            {selectedRowKeys.length > 0 && (
-              <>
-                <span style={{ lineHeight: '32px' }}>已选 {selectedRowKeys.length} 项</span>
-                <Button danger onClick={handleBatchDelete}>批量删除</Button>
-                <Button onClick={() => setSelectedRowKeys([])}>取消选择</Button>
-              </>
-            )}
+      <div className="filter-bar">
+        <span style={{ color: '#64748B', fontSize: 13 }}>共 {templates.length} 个模板</span>
+        {selectedRowKeys.length > 0 && (
+          <Space size={8}>
+            <span style={{ color: '#64748B', fontSize: 13 }}>已选 {selectedRowKeys.length} 项</span>
+            <Button size="small" danger onClick={handleBatchDelete}>批量删除</Button>
+            <Button size="small" onClick={() => setSelectedRowKeys([])}>取消</Button>
           </Space>
+        )}
+        <div style={{ marginLeft: 'auto' }}>
           <Button type="primary" icon={<PlusOutlined />} onClick={handleCreate}>新建模板</Button>
         </div>
+      </div>
 
+      <div style={{ background: '#fff', borderRadius: 16, border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}>
         <Table
           columns={columns}
           dataSource={templates}
           rowKey="id"
           loading={loading}
-          pagination={false}
+          pagination={{ pageSize: 10, showTotal: (t) => `共 ${t} 条` }}
           rowSelection={{
             selectedRowKeys,
             onChange: (keys) => setSelectedRowKeys(keys),
           }}
         />
-      </Card>
+      </div>
 
       <Modal
         title={editingTemplate ? '编辑模板' : '新建模板'}

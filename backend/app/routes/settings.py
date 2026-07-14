@@ -6,6 +6,7 @@ import os
 from app.config.database import get_db
 from app.core.security import check_roles
 from app.models.models import SystemConfig, UserRole
+from app.services.ai_service import invalidate_client_cache
 from app.schemas.settings import (
     SystemModelConfigResponse, SystemModelConfigUpdate,
     MailConfigResponse, MailConfigUpdate,
@@ -27,7 +28,7 @@ def _mask_key(api_key: Optional[str]) -> Tuple[bool, Optional[str]]:
 
 
 def _get_or_create_config(db: Session) -> SystemConfig:
-    config = db.query(SystemConfig).first()
+    config = db.query(SystemConfig).order_by(SystemConfig.updated_at.desc()).first()
     if config:
         return config
     config = SystemConfig(
@@ -90,6 +91,7 @@ def update_system_settings(
 
     db.commit()
     db.refresh(config)
+    invalidate_client_cache()
 
     api_key_set, api_key_last4 = _mask_key(config.llm_api_key)
     return SystemModelConfigResponse(

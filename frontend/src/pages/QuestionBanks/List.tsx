@@ -237,7 +237,7 @@ const QuestionBanksList: React.FC = () => {
       render: (difficulty: string) => {
         const colors: Record<string, string> = {
           junior: 'green',
-          intermediate: 'orange',
+          intermediate: 'blue',
           senior: 'red'
         };
         const labels: Record<string, string> = {
@@ -432,33 +432,26 @@ const QuestionBanksList: React.FC = () => {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-        <div>
-          <Title level={2} style={{ margin: 0 }}>题库管理</Title>
-          <Text type="secondary">管理面试题目和知识库</Text>
+      <div className="filter-bar">
+        {selectedRowKeys.length > 0 && (
+          <Space size={8}>
+            <span style={{ color: '#64748B', fontSize: 13 }}>已选 {selectedRowKeys.length} 项</span>
+            <Button size="small" danger onClick={handleBatchDelete}>批量删除</Button>
+            <Button size="small" onClick={() => setSelectedRowKeys([])}>取消</Button>
+          </Space>
+        )}
+        <div style={{ marginLeft: 'auto' }}>
+          <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>上传题库</Button>
         </div>
-        <Space>
-          {selectedRowKeys.length > 0 && (
-            <>
-              <span style={{ color: '#64748B' }}>已选 {selectedRowKeys.length} 项</span>
-              <Button danger onClick={handleBatchDelete}>批量删除</Button>
-              <Button onClick={() => setSelectedRowKeys([])}>取消选择</Button>
-            </>
-          )}
-          <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd} size="large" style={{ borderRadius: '8px' }}>上传题库</Button>
-        </Space>
       </div>
-      
-      <Table 
-        columns={columns} 
-        dataSource={data} 
-        loading={loading} 
-        rowKey="id" 
-        pagination={{ pageSize: 10, showSizeChanger: true }}
-        rowSelection={{
-          selectedRowKeys,
-          onChange: setSelectedRowKeys,
-        }}
+
+      <Table
+        columns={columns}
+        dataSource={data}
+        loading={loading}
+        rowKey="id"
+        pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (t) => `共 ${t} 条` }}
+        rowSelection={{ selectedRowKeys, onChange: setSelectedRowKeys }}
       />
 
       <Modal
@@ -566,7 +559,7 @@ const QuestionBanksList: React.FC = () => {
                         other: '其他'
                       }[viewingRecord.category] || viewingRecord.category
                     }</Tag>
-                    <Tag color="orange">{
+                    <Tag color="blue">{
                       {
                         junior: '初级',
                         intermediate: '中级',

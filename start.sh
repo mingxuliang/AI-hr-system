@@ -19,7 +19,7 @@ cleanup() {
 trap cleanup SIGINT SIGTERM
 
 echo "=========================================="
-echo "  AI Interview System - 启动脚本"
+echo "  System Startup"
 echo "=========================================="
 echo ""
 

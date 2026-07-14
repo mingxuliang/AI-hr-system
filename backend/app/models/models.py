@@ -2,7 +2,7 @@ from sqlalchemy import Column, String, Boolean, DateTime, Text, Enum, JSON, Inte
 from sqlalchemy.dialects.postgresql import UUID, ARRAY
 import uuid
 from datetime import datetime
-from app.models.base import Base
+from app.models.base import Base, pg_enum
 import enum
 from sqlalchemy.orm import relationship
 
@@ -18,7 +18,7 @@ class User(Base):
     email = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
     full_name = Column(String)
-    role = Column(Enum(UserRole), default=UserRole.HR)
+    role = Column(pg_enum(UserRole, 'userrole'), default=UserRole.HR)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -50,9 +50,9 @@ class Position(Base):
     salary_range = Column(String)
     location = Column(String)
     department = Column(String)
-    status = Column(Enum(PositionStatus), default=PositionStatus.OPEN)
-    urgency = Column(Enum(PositionUrgency), default=PositionUrgency.MEDIUM)
-    position_type = Column(Enum(PositionType), default=PositionType.FULL_TIME)
+    status = Column(pg_enum(PositionStatus, 'positionstatus'), default=PositionStatus.OPEN)
+    urgency = Column(pg_enum(PositionUrgency, 'positionurgency'), default=PositionUrgency.MEDIUM)
+    position_type = Column(pg_enum(PositionType, 'positiontype'), default=PositionType.FULL_TIME)
     headcount = Column(Integer, default=1)
     hiring_manager_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -76,8 +76,8 @@ class QuestionBank(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String, nullable=False)
-    category = Column(Enum(QuestionCategory), default=QuestionCategory.TECHNICAL)
-    difficulty = Column(Enum(QuestionDifficulty), default=QuestionDifficulty.INTERMEDIATE)
+    category = Column(pg_enum(QuestionCategory, 'questioncategory'), default=QuestionCategory.TECHNICAL)
+    difficulty = Column(pg_enum(QuestionDifficulty, 'questiondifficulty'), default=QuestionDifficulty.INTERMEDIATE)
     tags = Column(ARRAY(String))
     questions = Column(JSON)
     source_file = Column(String)
@@ -134,15 +134,15 @@ class Resume(Base):
     parse_status = Column(String, default="processing")
     parse_error = Column(Text)
     parsed_at = Column(DateTime)
-    screening_result = Column(Enum(ScreeningResult), default=ScreeningResult.PENDING)
+    screening_result = Column(pg_enum(ScreeningResult, 'screeningresult'), default=ScreeningResult.PENDING)
     ai_review = Column(Text)
     hr_review = Column(Text)
-    status = Column(Enum(ResumeStatus), default=ResumeStatus.PENDING_SCREENING)
+    status = Column(pg_enum(ResumeStatus, 'resumestatus'), default=ResumeStatus.PENDING_SCREENING)
     stage = Column(String, default="new")  # For Kanban: new, screening, interview, offer, hired, rejected
     # 其他岗位匹配信息（用于候选人更适合其他岗位的情况）
     other_position_matches = Column(JSON, nullable=True)
     # 淘汰相关字段
-    reject_reason_category = Column(Enum(RejectReasonCategory, values_callable=lambda obj: [e.value for e in obj]), nullable=True)
+    reject_reason_category = Column(pg_enum(RejectReasonCategory, 'rejectreasoncategory'), nullable=True)
     reject_reason_detail = Column(Text, nullable=True)
     rejected_at = Column(DateTime, nullable=True)
     rejected_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
@@ -213,10 +213,10 @@ class Interview(Base):
     panel_members = Column(JSON) # List of user IDs for the panel
     audio_records = Column(JSON) # Audio file paths per question (aggregated or primary)
     transcripts = Column(JSON) # Transcribed text per question (aggregated or primary)
-    result = Column(Enum(InterviewResult, values_callable=lambda obj: [e.value for e in obj]), default=InterviewResult.PENDING)
+    result = Column(pg_enum(InterviewResult, 'interviewresult'), default=InterviewResult.PENDING)
     evaluation = Column(Text)
     suggestion = Column(Text)
-    status = Column(Enum(InterviewStatus, values_callable=lambda obj: [e.value for e in obj]), default=InterviewStatus.SCHEDULED)
+    status = Column(pg_enum(InterviewStatus, 'interviewstatus'), default=InterviewStatus.SCHEDULED)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     resume = relationship("Resume")
@@ -281,7 +281,7 @@ class Offer(Base):
     notes = Column(Text)
     
     valid_until = Column(DateTime)
-    status = Column(Enum(OfferStatus), default=OfferStatus.DRAFT)
+    status = Column(pg_enum(OfferStatus, 'offerstatus'), default=OfferStatus.DRAFT)
     token = Column(String, unique=True, nullable=True)
     
     sent_at = Column(DateTime)
@@ -358,7 +358,7 @@ class CodingTest(Base):
     time_limit_ms = Column(Integer, default=3000)
     memory_limit_mb = Column(Integer, default=256)
     public_token = Column(String, unique=True, index=True, nullable=False)
-    status = Column(Enum(CodingTestStatus), default=CodingTestStatus.DRAFT)
+    status = Column(pg_enum(CodingTestStatus, 'codingteststatus'), default=CodingTestStatus.DRAFT)
     question_bank_id = Column(UUID(as_uuid=True), ForeignKey("question_banks.id"), nullable=True)
     questions = Column(JSON)
     question_generation_status = Column(String(20), default="pending")
@@ -394,7 +394,7 @@ class CodingSubmission(Base):
     passed = Column(Boolean, default=False)
     score = Column(Integer, default=0)
     ai_evaluation = Column(Text)
-    status = Column(Enum(CodingSubmissionStatus), default=CodingSubmissionStatus.DRAFT)
+    status = Column(pg_enum(CodingSubmissionStatus, 'codingsubmissionstatus'), default=CodingSubmissionStatus.DRAFT)
     created_at = Column(DateTime, default=datetime.utcnow)
     submitted_at = Column(DateTime)
     evaluated_at = Column(DateTime)

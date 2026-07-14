@@ -23,10 +23,16 @@ _client_cache = None
 _client_cache_key = None
 
 
+def invalidate_client_cache() -> None:
+    global _client_cache, _client_cache_key
+    _client_cache = None
+    _client_cache_key = None
+
+
 def _get_llm_config() -> Dict[str, Any]:
     db = SessionLocal()
     try:
-        cfg = db.query(SystemConfig).first()
+        cfg = db.query(SystemConfig).order_by(SystemConfig.updated_at.desc()).first()
         llm_provider = (cfg.llm_provider if cfg else None) or _DEFAULT_PROVIDER
         llm_base_url = (cfg.llm_base_url if cfg else None) or _DEFAULT_BASE_URL_BY_PROVIDER.get(llm_provider) or _DEFAULT_BASE_URL
         llm_model = (cfg.llm_model if cfg else None) or _DEFAULT_MODEL

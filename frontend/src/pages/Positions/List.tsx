@@ -47,8 +47,8 @@ interface Position {
 
 const urgencyConfig: Record<string, { color: string; text: string }> = {
   low: { color: 'default', text: '低' },
-  medium: { color: 'warning', text: '中' },
-  high: { color: 'orange', text: '高' },
+  medium: { color: 'blue', text: '中' },
+  high: { color: 'blue', text: '高' },
   urgent: { color: 'red', text: '紧急' },
 };
 
@@ -339,7 +339,7 @@ const PositionsList: React.FC = () => {
         let color = 'default';
         let text = '已关闭';
         if (status === 'open') {
-            color = 'warning';
+            color = 'blue';
             text = '待发布';
         } else if (status === 'published') {
             color = 'processing';
@@ -394,53 +394,47 @@ const PositionsList: React.FC = () => {
 
   return (
     <div>
-      <div style={{ marginBottom: 32, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-        <div>
-          <Title level={2} style={{ margin: 0, fontWeight: 700 }}>岗位管理</Title>
-          <Text type="secondary">管理企业的招聘岗位信息</Text>
+      <div className="filter-bar">
+        <Input
+          placeholder="搜索岗位名称"
+          prefix={<EyeOutlined style={{ color: '#94A3B8' }} />}
+          style={{ width: 260 }}
+          allowClear
+          onChange={(e) => setSearchTitle(e.target.value)}
+        />
+        <Select
+          placeholder="全部状态"
+          style={{ width: 140 }}
+          allowClear
+          onChange={(value) => setSearchStatus(value)}
+        >
+          <Select.Option value="open">待发布</Select.Option>
+          <Select.Option value="published">招聘中</Select.Option>
+          <Select.Option value="closed">已关闭</Select.Option>
+        </Select>
+
+        {selectedRowKeys.length > 0 && (
+          <Space size={8}>
+            <span style={{ color: '#64748B', fontSize: 13 }}>已选 {selectedRowKeys.length} 项</span>
+            <Button size="small" onClick={() => handleBatchPublish(true)} type="primary" ghost>批量发布</Button>
+            <Button size="small" onClick={() => handleBatchPublish(false)}>批量下架</Button>
+            <Button size="small" danger onClick={handleBatchDelete}>批量删除</Button>
+            <Button size="small" onClick={() => setSelectedRowKeys([])}>取消</Button>
+          </Space>
+        )}
+
+        <div style={{ marginLeft: 'auto' }}>
+          <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>新增岗位</Button>
         </div>
-        <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd} size="large" style={{ borderRadius: '8px' }}>新增岗位</Button>
       </div>
-      
-      <div style={{ marginBottom: 24, padding: '24px', background: '#fff', borderRadius: '12px', border: '1px solid #E2E8F0', display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'center' }}>
-          <Input 
-              placeholder="搜索岗位名称" 
-              prefix={<EyeOutlined style={{ color: '#94A3B8' }} />} 
-              style={{ width: 300 }} 
-              allowClear
-              onChange={(e) => setSearchTitle(e.target.value)}
-          />
-          <Select
-              placeholder="岗位状态"
-              style={{ width: 150 }}
-              allowClear
-              onChange={(value) => setSearchStatus(value)}
-          >
-              <Select.Option value="open">待发布</Select.Option>
-              <Select.Option value="published">招聘中</Select.Option>
-              <Select.Option value="closed">已关闭</Select.Option>
-          </Select>
-          {selectedRowKeys.length > 0 && (
-            <Space>
-              <span style={{ color: '#64748B' }}>已选 {selectedRowKeys.length} 项</span>
-              <Button onClick={() => handleBatchPublish(true)} type="primary" ghost>批量发布</Button>
-              <Button onClick={() => handleBatchPublish(false)}>批量下架</Button>
-              <Button danger onClick={handleBatchDelete}>批量删除</Button>
-              <Button onClick={() => setSelectedRowKeys([])}>取消选择</Button>
-            </Space>
-          )}
-      </div>
-      
-      <Table 
-        columns={columns} 
-        dataSource={data} 
-        loading={loading} 
-        rowKey="id" 
-        pagination={{ pageSize: 10, showSizeChanger: true }}
-        rowSelection={{
-          selectedRowKeys,
-          onChange: setSelectedRowKeys,
-        }}
+
+      <Table
+        columns={columns}
+        dataSource={data}
+        loading={loading}
+        rowKey="id"
+        pagination={{ pageSize: 10, showSizeChanger: true, showQuickJumper: true, showTotal: (t) => `共 ${t} 条` }}
+        rowSelection={{ selectedRowKeys, onChange: setSelectedRowKeys }}
       />
 
       <Modal
@@ -555,14 +549,14 @@ const PositionsList: React.FC = () => {
             name="description"
             rules={[{ required: true, message: '请输入岗位职责' }]}
           >
-            <Input.TextArea rows={4} placeholder="请输入详细的岗位职责描述" showCount maxLength={2000} style={{ padding: '8px 12px' }} />
+            <Input.TextArea rows={4} placeholder="请输入详细的岗位职责描述" showCount maxLength={2000} />
           </Form.Item>
 
           <Form.Item
             name="requirements"
             label="任职要求"
           >
-            <Input.TextArea rows={4} placeholder="请输入任职资格要求" showCount maxLength={2000} style={{ padding: '8px 12px' }} />
+            <Input.TextArea rows={4} placeholder="请输入任职资格要求" showCount maxLength={2000} />
           </Form.Item>
 
           <Form.Item
@@ -642,7 +636,7 @@ const PositionsList: React.FC = () => {
                 </div>
                 <div style={{ background: '#F8FAFC', padding: '12px 16px', borderRadius: 8 }}>
                   <Text type="secondary">待筛选</Text>
-                  <div style={{ fontSize: 24, fontWeight: 600, color: '#F59E0B' }}>{viewingRecord.stats?.pending_screening || 0}</div>
+                  <div style={{ fontSize: 24, fontWeight: 600, color: '#2563EB' }}>{viewingRecord.stats?.pending_screening || 0}</div>
                 </div>
                 <div style={{ background: '#F8FAFC', padding: '12px 16px', borderRadius: 8 }}>
                   <Text type="secondary">待面试</Text>

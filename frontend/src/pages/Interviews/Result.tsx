@@ -137,7 +137,7 @@ const InterviewResultPage: React.FC = () => {
       case 'passed': return 'success';
       case 'hired': return 'success';
       case 'rejected': return 'error';
-      case 'waitlist': return 'warning';
+      case 'waitlist': return 'info';
       case 'next_round': return 'info';
       default: return 'info';
     }
@@ -288,12 +288,12 @@ const InterviewResultPage: React.FC = () => {
           <Title level={4}>简历初审评价</Title>
           <Descriptions bordered column={1}>
              <Descriptions.Item label="匹配度评分">
-                <Tag color={interview.resume.match_score >= 80 ? 'green' : interview.resume.match_score >= 60 ? 'orange' : 'red'}>
+                <Tag color="blue">
                    {interview.resume.match_score ?? 'N/A'} 分
                 </Tag>
              </Descriptions.Item>
              <Descriptions.Item label="初审结果">
-                <Tag color={interview.resume.screening_result === 'passed' ? 'success' : interview.resume.screening_result === 'rejected' ? 'error' : 'warning'}>
+                <Tag color={interview.resume.screening_result === 'passed' ? 'success' : interview.resume.screening_result === 'rejected' ? 'error' : 'blue'}>
                    {interview.resume.screening_result === 'passed' ? '通过' : interview.resume.screening_result === 'rejected' ? '淘汰' : '待定'}
                 </Tag>
              </Descriptions.Item>

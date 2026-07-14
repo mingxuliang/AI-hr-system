@@ -19,8 +19,13 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.add_column('positions', sa.Column('urgency', sa.Enum('LOW', 'MEDIUM', 'HIGH', 'URGENT', name='positionurgency'), server_default='MEDIUM', nullable=True))
-    op.add_column('positions', sa.Column('position_type', sa.Enum('FULL_TIME', 'PART_TIME', 'CONTRACT', 'INTERNSHIP', name='positiontype'), server_default='FULL_TIME', nullable=True))
+    positionurgency = sa.Enum('LOW', 'MEDIUM', 'HIGH', 'URGENT', name='positionurgency')
+    positiontype = sa.Enum('FULL_TIME', 'PART_TIME', 'CONTRACT', 'INTERNSHIP', name='positiontype')
+    positionurgency.create(op.get_bind(), checkfirst=True)
+    positiontype.create(op.get_bind(), checkfirst=True)
+
+    op.add_column('positions', sa.Column('urgency', positionurgency, server_default='MEDIUM', nullable=True))
+    op.add_column('positions', sa.Column('position_type', positiontype, server_default='FULL_TIME', nullable=True))
     op.add_column('positions', sa.Column('headcount', sa.Integer(), server_default='1', nullable=True))
     op.add_column('positions', sa.Column('reports_to', sa.String(), nullable=True))
     op.add_column('positions', sa.Column('hiring_manager_id', UUID(), nullable=True))
