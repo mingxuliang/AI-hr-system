@@ -150,14 +150,17 @@ def process_resume_task(payload: Dict[str, Any]):
             if not ai_review and parsed_data.get("recommendation"):
                 ai_review = "### 💡 综合建议\n" + parsed_data.get("recommendation", "")
 
-        # 提取联系方式
-        contact_info = parsed_data.get("contact_info", {})
+        # 提取联系方式（兼容 contact_info 嵌套与顶层字段）
+        contact_info = parsed_data.get("contact_info")
+        contact = ""
+        email = ""
         if isinstance(contact_info, dict):
-            contact = contact_info.get("phone", "")
-            email = contact_info.get("email", "")
-        else:
-            contact = parsed_data.get("contact", "")
-            email = parsed_data.get("email", "")
+            contact = contact_info.get("phone") or contact_info.get("contact") or ""
+            email = contact_info.get("email") or ""
+        if not contact:
+            contact = parsed_data.get("contact") or ""
+        if not email:
+            email = parsed_data.get("email") or ""
 
         # 提取姓名
         candidate_name = parsed_data.get("candidate_name", "")

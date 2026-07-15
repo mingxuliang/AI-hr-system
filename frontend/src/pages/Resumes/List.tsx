@@ -1,8 +1,9 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { Table, Button, Space, message, Tag, Modal, Tooltip, Typography, Form, Select, Upload, Input, DatePicker, InputNumber, Card, Row, Col, Checkbox } from 'antd';
 import { PlusOutlined, EyeOutlined, TeamOutlined, DeleteOutlined, UploadOutlined, ReloadOutlined, CloseCircleOutlined, SearchOutlined, UndoOutlined, SolutionOutlined, SyncOutlined } from '@ant-design/icons';
 import request from '../../utils/request';
 import { useNavigate } from 'react-router-dom';
+import dayjs from 'dayjs';
 
 const { Text } = Typography;
 
@@ -28,6 +29,9 @@ const ResumesList: React.FC = () => {
   const [sendingEmail, setSendingEmail] = useState(false);
   const [emailForm] = Form.useForm();
   const [pendingInterviewData, setPendingInterviewData] = useState<any>(null);
+  const [previewHtml, setPreviewHtml] = useState('');
+  const [refreshingPreview, setRefreshingPreview] = useState(false);
+  const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [fileList, setFileList] = useState<any[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -218,9 +222,14 @@ const ResumesList: React.FC = () => {
         setEmailContent(emailPreview);
         emailForm.setFieldsValue({
           subject: emailPreview.subject,
-          content: emailPreview.content,
+          interview_time: values.interview_time || null,
+          interview_location: values.interview_location || '',
+          meeting_link: values.meeting_link || '',
+          contact_person: 'HR',
+          contact_phone: '',
           send_email: true
         });
+        setPreviewHtml(emailPreview.content || '');
         setInterviewModalVisible(false);
         setEmailPreviewVisible(true);
       } catch (error) {
@@ -240,25 +249,91 @@ const ResumesList: React.FC = () => {
     }
   };
 
+  const refreshEmailPreview = useCallback(async (override?: Record<string, any>) => {
+    if (!pendingInterviewData) return;
+    const values = { ...emailForm.getFieldsValue(), ...override };
+    setRefreshingPreview(true);
+    try {
+      const emailPreview = await request.post('/interviews/email-preview', {
+        resume_id: pendingInterviewData.resume_id,
+        position_id: pendingInterviewData.position_id,
+        interview_time: values.interview_time
+          ? (dayjs.isDayjs(values.interview_time)
+            ? values.interview_time.toISOString()
+            : dayjs(values.interview_time).toISOString())
+          : pendingInterviewData.interview_time,
+        round: pendingInterviewData.round || 1,
+        interview_type: pendingInterviewData.interview_type || 'onsite',
+        interview_category: pendingInterviewData.interview_category || 'technical',
+        interview_location: (pendingInterviewData.interview_type === 'video' ? '' : values.interview_location) || '',
+        meeting_link: (pendingInterviewData.interview_type === 'video' ? values.meeting_link : '') || '',
+        contact_person: values.contact_person || 'HR',
+        contact_phone: values.contact_phone || '',
+      });
+      setEmailContent(emailPreview);
+      setPreviewHtml(emailPreview.content || '');
+      if (!values.subject) {
+        emailForm.setFieldsValue({ subject: emailPreview.subject });
+      }
+    } catch (error) {
+      console.error('刷新邮件预览失败', error);
+    } finally {
+      setRefreshingPreview(false);
+    }
+  }, [pendingInterviewData, emailForm]);
+
+  const handleEmailFieldsChange = (_changed: any, allValues: any) => {
+    if (previewTimerRef.current) clearTimeout(previewTimerRef.current);
+    previewTimerRef.current = setTimeout(() => {
+      refreshEmailPreview(allValues);
+    }, 400);
+  };
+
   const handleConfirmAndSend = async () => {
     try {
       const values = await emailForm.validateFields();
       setSendingEmail(true);
 
-      // 创建面试
-      const res = await request.post('/interviews', {
+      const interviewTime = values.interview_time
+        ? (dayjs.isDayjs(values.interview_time)
+          ? values.interview_time.toISOString()
+          : dayjs(values.interview_time).toISOString())
+        : pendingInterviewData.interview_time;
+
+      const isVideo = pendingInterviewData.interview_type === 'video';
+      const meetingLink = isVideo ? (values.meeting_link || '') : '';
+      const interviewLocation = isVideo ? '' : (values.interview_location || '');
+
+      const finalInterviewData = {
         ...pendingInterviewData,
-        skip_email: true  // 稍后手动发送
+        interview_time: interviewTime,
+        interview_location: interviewLocation,
+        meeting_link: meetingLink,
+        skip_email: true,
+      };
+
+      const emailPreview = await request.post('/interviews/email-preview', {
+        resume_id: finalInterviewData.resume_id,
+        position_id: finalInterviewData.position_id,
+        interview_time: interviewTime,
+        round: finalInterviewData.round || 1,
+        interview_type: finalInterviewData.interview_type || 'onsite',
+        interview_category: finalInterviewData.interview_category || 'technical',
+        interview_location: interviewLocation,
+        meeting_link: meetingLink,
+        contact_person: values.contact_person || 'HR',
+        contact_phone: values.contact_phone || '',
       });
+
+      const res = await request.post('/interviews', finalInterviewData);
 
       setCreatedInterviewId(res.id);
 
-      // 如果勾选发送邮件，则发送
       if (values.send_email && res.id) {
         try {
           await request.post(`/interviews/${res.id}/send-email`, {
             subject: values.subject,
-            content: values.content
+            content: emailPreview.content,
           });
           message.success('面试安排成功，邮件已发送');
         } catch (error) {
@@ -924,12 +999,12 @@ const ResumesList: React.FC = () => {
       >
         {emailContent && (
           <div style={{ marginBottom: 16, padding: 12, background: '#f5f5f5', borderRadius: 8 }}>
-            <p><strong>收件人：</strong>{emailContent.to_email}</p>
-            <p><strong>候选人：</strong>{emailContent.candidate_name}</p>
+            <p style={{ marginBottom: 4 }}><strong>收件人：</strong>{emailContent.to_email || '未填写邮箱'}</p>
+            <p style={{ marginBottom: 0 }}><strong>候选人：</strong>{emailContent.candidate_name}</p>
           </div>
         )}
 
-        <Form form={emailForm} layout="vertical">
+        <Form form={emailForm} layout="vertical" onValuesChange={handleEmailFieldsChange}>
           <Form.Item
             name="subject"
             label="邮件主题"
@@ -938,31 +1013,55 @@ const ResumesList: React.FC = () => {
             <Input placeholder="邮件主题" size="large" />
           </Form.Item>
 
-          <Form.Item
-            name="content"
-            label="邮件内容"
-            rules={[{ required: true, message: '请输入邮件内容' }]}
-          >
-            <Input.TextArea
-              rows={10}
-              placeholder="邮件内容（支持 HTML 格式）"
-              style={{ fontFamily: 'monospace' }}
-            />
-          </Form.Item>
+          <Row gutter={16}>
+            <Col span={pendingInterviewData?.interview_type === 'video' ? 24 : 12}>
+              <Form.Item
+                name="interview_time"
+                label="面试时间"
+                rules={[{ required: true, message: '请选择面试时间' }]}
+              >
+                <DatePicker showTime style={{ width: '100%' }} size="large" />
+              </Form.Item>
+            </Col>
+            {pendingInterviewData?.interview_type !== 'video' && (
+              <Col span={12}>
+                <Form.Item name="interview_location" label="面试地点">
+                  <Input placeholder="例如：公司总部 3 楼会议室" size="large" />
+                </Form.Item>
+              </Col>
+            )}
+          </Row>
 
-          <Form.Item
-            label="邮件预览"
-          >
+          {pendingInterviewData?.interview_type === 'video' && (
+            <Form.Item name="meeting_link" label="腾讯会议地址">
+              <Input placeholder="例如：https://meeting.tencent.com/..." size="large" />
+            </Form.Item>
+          )}
+
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name="contact_person" label="联系人">
+                <Input placeholder="例如：张经理" size="large" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="contact_phone" label="联系电话">
+                <Input placeholder="例如：138xxxx8888" size="large" />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Form.Item label={refreshingPreview ? '邮件预览（更新中…）' : '邮件预览'}>
             <div
               style={{
                 border: '1px solid #d9d9d9',
                 borderRadius: 8,
                 padding: 16,
-                maxHeight: 300,
+                maxHeight: 320,
                 overflow: 'auto',
                 background: '#fff'
               }}
-              dangerouslySetInnerHTML={{ __html: emailForm.getFieldValue('content') || '' }}
+              dangerouslySetInnerHTML={{ __html: previewHtml }}
             />
           </Form.Item>
 

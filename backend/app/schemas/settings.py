@@ -3,16 +3,24 @@ from typing import Optional, Dict
 
 
 class SystemModelConfigResponse(BaseModel):
+    llm_provider: Optional[str] = "dashscope"
     llm_base_url: Optional[str] = None
     llm_model: str
     llm_api_key_set: bool
     llm_api_key_last4: Optional[str] = None
+    asr_model: Optional[str] = None
+    tts_model: Optional[str] = None
+    tts_voice: Optional[str] = None
 
 
 class SystemModelConfigUpdate(BaseModel):
+    llm_provider: Optional[str] = None
     llm_base_url: Optional[str] = None
     llm_api_key: Optional[str] = None
     llm_model: Optional[str] = None
+    asr_model: Optional[str] = None
+    tts_model: Optional[str] = None
+    tts_voice: Optional[str] = None
 
 
 class MailConfigResponse(BaseModel):

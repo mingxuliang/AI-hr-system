@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Card, Descriptions, Button, InputNumber, Form, Input, Row, Col, Typography, message, Divider, Tag, Space, Spin, Modal, Popconfirm, Select, Collapse, Tooltip, List, Avatar, Progress } from 'antd';
 import { useParams, useNavigate } from 'react-router-dom';
-import { EditOutlined, DeleteOutlined, PlusOutlined, SaveOutlined, CloseOutlined, DownloadOutlined, FilePdfOutlined, FileWordOutlined, LeftOutlined, RightOutlined, CheckCircleOutlined, CheckCircleFilled, CaretRightOutlined, AudioOutlined, LoadingOutlined, ExpandOutlined, CompressOutlined, PlayCircleOutlined, UserOutlined, StopOutlined, ClockCircleOutlined } from '@ant-design/icons';
+import { EditOutlined, DeleteOutlined, PlusOutlined, SaveOutlined, CloseOutlined, DownloadOutlined, FilePdfOutlined, FileWordOutlined, LeftOutlined, RightOutlined, CheckCircleOutlined, CheckCircleFilled, CaretRightOutlined, AudioOutlined, LoadingOutlined, ExpandOutlined, CompressOutlined, UserOutlined, StopOutlined } from '@ant-design/icons';
 import request from '../../utils/request';
 import { useAuth } from '../../contexts/AuthContext';
 import { getMaximizedPdfPreviewUrl } from '../../utils/pdfPreview';
@@ -53,11 +53,6 @@ const InterviewScore: React.FC = () => {
 
   // 面试官提交状态
   const [submissionStatus, setSubmissionStatus] = useState<any>(null);
-  const [startingInterview, setStartingInterview] = useState(false);
-
-  // 面试计时状态
-  const [elapsedTime, setElapsedTime] = useState(0); // 秒
-  const [timerInterval, setTimerInterval] = useState<ReturnType<typeof setInterval> | null>(null);
 
   // 取消面试相关状态
   const [cancelModalVisible, setCancelModalVisible] = useState(false);
@@ -80,34 +75,6 @@ const InterviewScore: React.FC = () => {
     onChange();
     return () => document.removeEventListener('fullscreenchange', onChange);
   }, []);
-
-  // 面试计时器
-  useEffect(() => {
-    if (interview?.status === 'in_progress' && interview?.started_at) {
-      const startTime = new Date(interview.started_at).getTime();
-      
-      const updateTimer = () => {
-        const now = Date.now();
-        const elapsed = Math.floor((now - startTime) / 1000);
-        setElapsedTime(elapsed);
-      };
-      
-      updateTimer();
-      const interval = setInterval(updateTimer, 1000);
-      setTimerInterval(interval);
-      
-      return () => {
-        clearInterval(interval);
-        setTimerInterval(null);
-      };
-    } else {
-      setElapsedTime(0);
-      if (timerInterval) {
-        clearInterval(timerInterval);
-        setTimerInterval(null);
-      }
-    }
-  }, [interview?.status, interview?.started_at]);
 
   // 格式化时间显示
   const formatTime = (seconds: number) => {
@@ -179,7 +146,17 @@ const InterviewScore: React.FC = () => {
   const fetchInterview = async (interviewId: string, silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const res = await request.get(`/interviews/${interviewId}`) as any;
+      let res = await request.get(`/interviews/${interviewId}`) as any;
+
+      // 进入评分页即自动开场，不再需要「开始面试」按钮
+      if (res.status === 'scheduled') {
+        try {
+          res = await request.post(`/interviews/${interviewId}/start`) as any;
+        } catch {
+          // 并发或状态已变时忽略，继续用最新详情
+          res = await request.get(`/interviews/${interviewId}`) as any;
+        }
+      }
 
       if (res.status === 'completed') {
          navigate(`/interviews/${interviewId}/result`);
@@ -194,6 +171,26 @@ const InterviewScore: React.FC = () => {
 
       setInterview(res);
       setQuestions(res.questions || []);
+
+      // 恢复已上传录音的转写结果（刷新页面后仍可见）
+      const transcripts = res.transcripts || {};
+      const audioRecords = res.audio_records || {};
+      const fullData = transcripts.full_interview_data;
+      const fullText = transcripts.full_interview;
+      if (fullData || fullText || audioRecords.full_interview) {
+        setRecordingUploaded(true);
+        if (fullData && typeof fullData === 'object') {
+          setTranscriptSegments(fullData.segments || []);
+          setFullTranscript(
+            fullData.text
+              || (typeof fullText === 'string' ? fullText : '')
+              || ''
+          );
+        } else if (typeof fullText === 'string' && fullText) {
+          setFullTranscript(fullText);
+          setTranscriptSegments([]);
+        }
+      }
     } catch (error) {
       if (!silent) message.error('获取面试详情失败');
     } finally {
@@ -208,22 +205,6 @@ const InterviewScore: React.FC = () => {
       setSubmissionStatus(res);
     } catch (error) {
       // 静默失败，不影响主要功能
-    }
-  };
-
-  // 开始面试
-  const handleStartInterview = async () => {
-    if (!id) return;
-
-    setStartingInterview(true);
-    try {
-      await request.post(`/interviews/${id}/start`);
-      message.success('面试已开始');
-      fetchInterview(id, true);
-    } catch (error: any) {
-      message.error(error?.response?.data?.detail || '开始面试失败');
-    } finally {
-      setStartingInterview(false);
     }
   };
 
@@ -396,6 +377,7 @@ const InterviewScore: React.FC = () => {
       setFullMediaRecorder(recorder);
       setFullRecording(true);
       setFullRecordingTime(0);
+      setFullRecordingBlob(null);
       setRealtimeTranscript('');
       setRecordingUploaded(false);
 
@@ -462,7 +444,7 @@ const InterviewScore: React.FC = () => {
   };
 
   const uploadFullRecording = async () => {
-    if (!fullRecordingBlob || !id || recordingUploaded) return;
+    if (!fullRecordingBlob || !id) return;
 
     setUploadingRecording(true);
     try {
@@ -481,11 +463,17 @@ const InterviewScore: React.FC = () => {
         setFullTranscript(response.formatted_transcript || transcriptText);
         if (response.segments && Array.isArray(response.segments)) {
           setTranscriptSegments(response.segments);
+        } else {
+          setTranscriptSegments([]);
         }
         setRecordingUploaded(true);
-        message.success('录音已上传，AI正在分析...');
+        setFullRecordingBlob(null);
+        message.success('录音已上传并完成转写');
       } else {
+        setFullTranscript('');
+        setTranscriptSegments([]);
         setRecordingUploaded(true);
+        setFullRecordingBlob(null);
         message.success('录音已上传');
       }
     } catch (error) {
@@ -808,28 +796,6 @@ const InterviewScore: React.FC = () => {
            <Button icon={<LeftOutlined />} onClick={() => navigate('/interviews')} />
          </Tooltip>
 
-         {/* 面试计时器 */}
-         {interview?.status === 'in_progress' && (
-           <Tag color="processing" style={{ fontSize: 16, padding: '4px 12px', marginRight: 8 }}>
-             <ClockCircleOutlined style={{ marginRight: 4 }} />
-             {formatTime(elapsedTime)}
-           </Tag>
-         )}
-
-         {/* 开始面试按钮 */}
-         {interview?.status === 'scheduled' && (
-           <Tooltip title="开始面试">
-             <Button
-               type="primary"
-               icon={<PlayCircleOutlined />}
-               onClick={handleStartInterview}
-               loading={startingInterview}
-             >
-               开始面试
-             </Button>
-           </Tooltip>
-         )}
-
          {/* 取消面试按钮 */}
          {canCancelInterview && (interview?.status === 'scheduled' || interview?.status === 'in_progress') && (
            <Tooltip title="取消面试">
@@ -857,12 +823,6 @@ const InterviewScore: React.FC = () => {
            
            if (!isFirstInterviewer && panelMembers.length > 0) return null;
            
-           if (recordingUploaded) {
-             return (
-               <Tag color="success" icon={<CheckCircleOutlined />}>录音已上传</Tag>
-             );
-           }
-           
            if (fullRecording) {
              return (
                <Button type="primary" danger icon={<AudioOutlined />} onClick={stopFullRecording}>
@@ -873,9 +833,31 @@ const InterviewScore: React.FC = () => {
            
            if (fullRecordingBlob) {
              return (
-               <Button type="default" icon={<AudioOutlined />} loading={uploadingRecording} onClick={uploadFullRecording}>
-                 上传录音
-               </Button>
+               <Space>
+                 {recordingUploaded && (
+                   <Tag color="success" icon={<CheckCircleOutlined />}>已有录音</Tag>
+                 )}
+                 <Button type="primary" icon={<AudioOutlined />} loading={uploadingRecording} onClick={uploadFullRecording}>
+                   {recordingUploaded ? '重新上传' : '上传录音'}
+                 </Button>
+                 <Button onClick={startFullRecording}>重录</Button>
+               </Space>
+             );
+           }
+
+           if (recordingUploaded) {
+             return (
+               <Space>
+                 <Tag color="success" icon={<CheckCircleOutlined />}>录音已上传</Tag>
+                 <Popconfirm
+                   title="重新录音将覆盖当前转写结果，确定继续？"
+                   onConfirm={startFullRecording}
+                   okText="开始重录"
+                   cancelText="取消"
+                 >
+                   <Button icon={<AudioOutlined />}>重新录音</Button>
+                 </Popconfirm>
+               </Space>
              );
            }
            
@@ -888,7 +870,7 @@ const InterviewScore: React.FC = () => {
       </Space>
   );
 
-  // 实时转写显示栏
+  // 实时转写显示栏（录制中或本地有未上传录音时显示）
   const realtimeTranscriptBar = (fullRecording || realtimeTranscript) && !recordingUploaded && (
     <div style={{ 
       background: fullRecording ? '#FFF7ED' : '#F0FDF4', 
@@ -1082,8 +1064,25 @@ const InterviewScore: React.FC = () => {
                             <Space direction="vertical" size="small">
                               <Text type="success">录音已完成 ({formatTime(fullRecordingTime)})</Text>
                               <Button type="primary" size="small" loading={uploadingRecording} onClick={uploadFullRecording}>
-                                上传并分析
+                                {recordingUploaded ? '重新上传并分析' : '上传并分析'}
                               </Button>
+                              <Button size="small" onClick={startFullRecording}>重录</Button>
+                            </Space>
+                          );
+                        }
+
+                        if (recordingUploaded) {
+                          return (
+                            <Space direction="vertical" size="small">
+                              <Text type="success">录音已上传</Text>
+                              <Popconfirm
+                                title="重新录音将覆盖当前转写结果，确定继续？"
+                                onConfirm={startFullRecording}
+                                okText="开始重录"
+                                cancelText="取消"
+                              >
+                                <Button type="default" size="small">重新录制</Button>
+                              </Popconfirm>
                             </Space>
                           );
                         }
@@ -1172,7 +1171,40 @@ const InterviewScore: React.FC = () => {
                 </Button>
               </div>
             </Card>
-          ) : currentQuestion && (
+          ) : (
+            <>
+              {(fullTranscript || recordingUploaded) && (
+                <Card
+                  size="small"
+                  style={{ marginBottom: 12, borderRadius: 12, border: '1px solid #E2E8F0' }}
+                  title={<Text strong>录音转写结果</Text>}
+                >
+                  <div style={{ maxHeight: 160, overflow: 'auto' }}>
+                    {fullTranscript ? (
+                      transcriptSegments.length > 0 ? (
+                        <div style={{ fontSize: 13, lineHeight: 1.8 }}>
+                          {transcriptSegments.map((seg: any, idx: number) => (
+                            <div key={idx} style={{ marginBottom: 8 }}>
+                              <Tag color={seg.speaker?.includes('1') ? 'blue' : 'green'} style={{ marginRight: 8 }}>
+                                {seg.speaker || `说话人${idx + 1}`}
+                              </Tag>
+                              <Text type="secondary" style={{ fontSize: 11, marginRight: 8 }}>
+                                [{seg.start?.toFixed(1)}s]
+                              </Text>
+                              <Text>{seg.text}</Text>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <Text style={{ whiteSpace: 'pre-wrap' }}>{fullTranscript}</Text>
+                      )
+                    ) : (
+                      <Text type="secondary">录音已上传，但转写结果为空。请重新上传录音，或确认麦克风有实际人声。</Text>
+                    )}
+                  </div>
+                </Card>
+              )}
+              {currentQuestion && (
             <Card 
               key={currentQuestionIndex}
               style={{ flex: 1, borderRadius: '12px', border: '1px solid #E2E8F0', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
@@ -1296,23 +1328,22 @@ const InterviewScore: React.FC = () => {
                         下一题
                       </Button>
                     ) : (
-                      <Tooltip title={interview?.status !== 'in_progress' ? '请先点击"开始面试"按钮' : ''}>
-                        <Button 
+                      <Button 
                           type="primary" 
                           icon={<SaveOutlined />} 
                           onClick={handleSubmitScore} 
                           loading={submitting}
-                          disabled={interview?.status !== 'in_progress'}
                           style={{ paddingLeft: 24, paddingRight: 24 }}
                         >
                           提交评分
                         </Button>
-                      </Tooltip>
                     )}
                   </div>
                 </div>
               )}
             </Card>
+              )}
+            </>
           )}
         </div>
       </div>

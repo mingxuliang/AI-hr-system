@@ -65,8 +65,14 @@
                                             {% endif %}
                                             <tr>
                                                 <td style="padding: 8px 0; color: #666; font-size: 14px;">联系人</td>
-                                                <td style="padding: 8px 0; color: #333; font-size: 14px; font-weight: 600;">{{contact_person}} {{contact_phone}}</td>
+                                                <td style="padding: 8px 0; color: #333; font-size: 14px; font-weight: 600;">{{contact_person}}</td>
                                             </tr>
+                                            {% if contact_phone %}
+                                            <tr>
+                                                <td style="padding: 8px 0; color: #666; font-size: 14px;">联系电话</td>
+                                                <td style="padding: 8px 0; color: #333; font-size: 14px; font-weight: 600;">{{contact_phone}}</td>
+                                            </tr>
+                                            {% endif %}
                                         </table>
                                     </td>
                                 </tr>

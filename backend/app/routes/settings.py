@@ -32,15 +32,38 @@ def _get_or_create_config(db: Session) -> SystemConfig:
     if config:
         return config
     config = SystemConfig(
-        llm_provider=os.getenv("LLM_PROVIDER", "dashscope"),
-        llm_base_url=os.getenv("OPENAI_BASE_URL") or os.getenv("LLM_BASE_URL") or "https://dashscope.aliyuncs.com/compatible-mode/v1",
-        llm_model=os.getenv("OPENAI_MODEL") or os.getenv("LLM_MODEL") or "qwen3.5-plus",
+        llm_provider=os.getenv("LLM_PROVIDER", "siliconflow"),
+        llm_base_url=os.getenv("OPENAI_BASE_URL") or os.getenv("LLM_BASE_URL") or "https://api.siliconflow.cn/v1",
+        llm_model=os.getenv("OPENAI_MODEL") or os.getenv("LLM_MODEL") or "Qwen/Qwen2.5-7B-Instruct",
         llm_api_key=os.getenv("OPENAI_API_KEY") or os.getenv("LLM_API_KEY"),
+        asr_model="FunAudioLLM/SenseVoiceSmall",
+        tts_model="FunAudioLLM/CosyVoice2-0.5B",
+        tts_voice="FunAudioLLM/CosyVoice2-0.5B:alex",
     )
     db.add(config)
     db.commit()
     db.refresh(config)
     return config
+
+
+def _model_config_response(config: SystemConfig) -> SystemModelConfigResponse:
+    api_key_set, api_key_last4 = _mask_key(config.llm_api_key)
+    provider = config.llm_provider or "siliconflow"
+    default_base = {
+        "siliconflow": "https://api.siliconflow.cn/v1",
+        "dashscope": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "openai": "https://api.openai.com/v1",
+    }.get(provider, "https://api.siliconflow.cn/v1")
+    return SystemModelConfigResponse(
+        llm_provider=provider,
+        llm_base_url=config.llm_base_url or default_base,
+        llm_model=config.llm_model or ("Qwen/Qwen2.5-7B-Instruct" if provider == "siliconflow" else "qwen3.5-plus"),
+        llm_api_key_set=api_key_set,
+        llm_api_key_last4=api_key_last4,
+        asr_model=getattr(config, "asr_model", None) or "FunAudioLLM/SenseVoiceSmall",
+        tts_model=getattr(config, "tts_model", None) or "FunAudioLLM/CosyVoice2-0.5B",
+        tts_voice=getattr(config, "tts_voice", None) or "FunAudioLLM/CosyVoice2-0.5B:alex",
+    )
 
 
 @router.get("/system", response_model=SystemModelConfigResponse)
@@ -49,13 +72,7 @@ def get_system_settings(
     _current_user=Depends(check_roles([UserRole.ADMIN])),
 ):
     config = _get_or_create_config(db)
-    api_key_set, api_key_last4 = _mask_key(config.llm_api_key)
-    return SystemModelConfigResponse(
-        llm_base_url=config.llm_base_url or "https://dashscope.aliyuncs.com/compatible-mode/v1",
-        llm_model=config.llm_model or "qwen3.5-plus",
-        llm_api_key_set=api_key_set,
-        llm_api_key_last4=api_key_last4,
-    )
+    return _model_config_response(config)
 
 
 @router.put("/system", response_model=SystemModelConfigResponse)
@@ -66,6 +83,27 @@ def update_system_settings(
 ):
     config = _get_or_create_config(db)
     data = payload.dict(exclude_unset=True)
+
+    if "llm_provider" in data:
+        provider = (data["llm_provider"] or "").strip() or "siliconflow"
+        config.llm_provider = provider
+        # 切换厂商时若未显式改 Base URL，自动填充默认地址
+        if "llm_base_url" not in data or not (data.get("llm_base_url") or "").strip():
+            defaults = {
+                "siliconflow": "https://api.siliconflow.cn/v1",
+                "dashscope": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+                "openai": "https://api.openai.com/v1",
+            }
+            if provider in defaults:
+                config.llm_base_url = defaults[provider]
+        # 硅基流动时确保 ASR/TTS 默认模型
+        if provider == "siliconflow":
+            if not getattr(config, "asr_model", None):
+                config.asr_model = "FunAudioLLM/SenseVoiceSmall"
+            if not getattr(config, "tts_model", None):
+                config.tts_model = "FunAudioLLM/CosyVoice2-0.5B"
+            if not getattr(config, "tts_voice", None):
+                config.tts_voice = "FunAudioLLM/CosyVoice2-0.5B:alex"
 
     if "llm_base_url" in data:
         config.llm_base_url = (data["llm_base_url"] or "").strip() or None
@@ -80,6 +118,15 @@ def update_system_settings(
         if api_key:
             config.llm_api_key = api_key
 
+    if "asr_model" in data:
+        config.asr_model = (data["asr_model"] or "").strip() or "FunAudioLLM/SenseVoiceSmall"
+
+    if "tts_model" in data:
+        config.tts_model = (data["tts_model"] or "").strip() or "FunAudioLLM/CosyVoice2-0.5B"
+
+    if "tts_voice" in data:
+        config.tts_voice = (data["tts_voice"] or "").strip() or "FunAudioLLM/CosyVoice2-0.5B:alex"
+
     if not config.llm_base_url:
         raise HTTPException(status_code=400, detail="请配置 Base URL")
 
@@ -93,13 +140,7 @@ def update_system_settings(
     db.refresh(config)
     invalidate_client_cache()
 
-    api_key_set, api_key_last4 = _mask_key(config.llm_api_key)
-    return SystemModelConfigResponse(
-        llm_base_url=config.llm_base_url,
-        llm_model=config.llm_model or "qwen3.5-plus",
-        llm_api_key_set=api_key_set,
-        llm_api_key_last4=api_key_last4,
-    )
+    return _model_config_response(config)
 
 
 @router.get("/mail", response_model=MailConfigResponse)

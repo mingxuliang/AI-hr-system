@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Button, Card, Form, Input, Modal, Select, Space, Table, Tag, message, Tooltip, Typography, Popconfirm, InputNumber, Divider, Tabs, Empty, Descriptions, Collapse, Radio, Checkbox } from 'antd';
-import { PlusOutlined, LinkOutlined, SendOutlined, StopOutlined, EyeOutlined, EditOutlined, ImportOutlined, DeleteOutlined, ArrowLeftOutlined, UserOutlined, ClockCircleOutlined, CheckCircleOutlined, CloseCircleOutlined, CodeOutlined, FileTextOutlined, RobotOutlined, MinusCircleOutlined, SaveOutlined } from '@ant-design/icons';
+import { PlusOutlined, LinkOutlined, SendOutlined, StopOutlined, EyeOutlined, EditOutlined, DeleteOutlined, ArrowLeftOutlined, UserOutlined, ClockCircleOutlined, CheckCircleOutlined, CloseCircleOutlined, CodeOutlined, FileTextOutlined, RobotOutlined, MinusCircleOutlined, SaveOutlined } from '@ant-design/icons';
 import request from '../../utils/request';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -8,27 +8,6 @@ import CodeEditor from '../../components/CodeEditor';
 
 const { TextArea } = Input;
 const { Text } = Typography;
-
-const starterCodeByLanguage: Record<string, string> = {
-  javascript: `function solution() {
-  return null;
-}
-`,
-  python: `def solution(*args):
-  return None
-`,
-  java: `public class Solution {
-  public static Object solution(Object... args) {
-    return null;
-  }
-}
-`,
-};
-
-const defaultTestCases = [
-  { input: [[1, 2, 3], 3], expected: 2 },
-  { input: [[1, 2, 3], 2], expected: 1 }
-];
 
 const testTypeLabels: Record<string, { label: string; color: string }> = {
   algorithm: { label: '算法', color: 'blue' },
@@ -43,16 +22,14 @@ const CodingTestsList: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
   const [form] = Form.useForm();
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [importingLeetcode, setImportingLeetcode] = useState(false);
   const [submissionsOpen, setSubmissionsOpen] = useState(false);
   const [submissionsLoading, setSubmissionsLoading] = useState(false);
   const [submissions, setSubmissions] = useState<any[]>([]);
   const [selectedSubmission, setSelectedSubmission] = useState<any>(null);
   const [selectedTest, setSelectedTest] = useState<any>(null);
-  const [starterCodeLanguage, setStarterCodeLanguage] = useState('javascript');
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [questionBanks, setQuestionBanks] = useState<any[]>([]);
-  const [testType, setTestType] = useState<string>('algorithm');
+  const [testType, setTestType] = useState<string>('choice');
   const [editingQuestions, setEditingQuestions] = useState<any[]>([]);
   const [questionsModalOpen, setQuestionsModalOpen] = useState(false);
   const [savingQuestions, setSavingQuestions] = useState(false);
@@ -98,16 +75,11 @@ const CodingTestsList: React.FC = () => {
   const handleCreate = () => {
     form.resetFields();
     setEditingId(null);
-    setStarterCodeLanguage('javascript');
-    setTestType('algorithm');
+    setTestType('choice');
     form.setFieldsValue({
-      leetcode_url: '',
-      test_type: 'algorithm',
-      language: 'javascript',
+      test_type: 'choice',
       difficulty: 'intermediate',
       status: 'draft',
-      starter_code: starterCodeByLanguage.javascript,
-      test_cases: JSON.stringify(defaultTestCases, null, 2),
       duration_minutes: 60,
       question_count: 10,
     });
@@ -118,18 +90,7 @@ const CodingTestsList: React.FC = () => {
     try {
       const values = await form.validateFields();
       setSubmitting(true);
-      
-      let testCases: any[] = [];
-      if (values.test_type === 'algorithm') {
-        try {
-          testCases = values.test_cases ? JSON.parse(values.test_cases) : [];
-        } catch (e) {
-          message.error('测试用例 JSON 格式不正确');
-          setSubmitting(false);
-          return;
-        }
-      }
-      
+
       const payload: any = {
         title: values.title,
         description: values.description,
@@ -137,17 +98,8 @@ const CodingTestsList: React.FC = () => {
         difficulty: values.difficulty,
         duration_minutes: values.duration_minutes,
         status: values.status,
+        question_bank_id: values.question_bank_id,
       };
-
-      if (values.test_type === 'algorithm') {
-        payload.language = values.language;
-        payload.starter_code = values.starter_code;
-        payload.test_cases = testCases;
-        payload.time_limit_ms = values.time_limit_ms;
-        payload.memory_limit_mb = values.memory_limit_mb;
-      } else {
-        payload.question_bank_id = values.question_bank_id;
-      }
 
       if (editingId) {
         await request.put(`/coding-tests/${editingId}`, payload);
@@ -159,8 +111,8 @@ const CodingTestsList: React.FC = () => {
         message.success('创建成功，正在生成题目...');
         setOpen(false);
         fetchList();
-        
-        if (values.test_type !== 'algorithm' && values.question_bank_id) {
+
+        if (values.question_bank_id) {
           try {
             await request.post(`/coding-tests/${created.id}/generate-questions`, null, {
               params: {
@@ -181,16 +133,6 @@ const CodingTestsList: React.FC = () => {
     } finally {
       setSubmitting(false);
     }
-  };
-
-  const handleLanguageChange = (lang: string) => {
-    const current = form.getFieldValue('starter_code');
-    const prevTemplate = starterCodeByLanguage[starterCodeLanguage] || '';
-    const nextTemplate = starterCodeByLanguage[lang] || '';
-    if (!current || current === prevTemplate) {
-      form.setFieldsValue({ starter_code: nextTemplate });
-    }
-    setStarterCodeLanguage(lang);
   };
 
   const handleTestTypeChange = (type: string) => {
@@ -290,23 +232,16 @@ const CodingTestsList: React.FC = () => {
     try {
       const res = await request.get(`/coding-tests/${record.id}`);
       setEditingId(record.id);
-      const type = res.test_type || 'algorithm';
+      // 算法题已从创建/编辑表单中隐藏，旧数据编辑时回退为选择题
+      const type = res.test_type === 'essay' ? 'essay' : 'choice';
       setTestType(type);
-      const lang = res.language || 'javascript';
-      setStarterCodeLanguage(lang);
       form.resetFields();
       form.setFieldsValue({
-        leetcode_url: '',
         title: res.title,
         description: res.description,
         test_type: type,
         difficulty: res.difficulty || 'intermediate',
-        language: lang,
         status: res.status || 'draft',
-        time_limit_ms: res.time_limit_ms ?? 3000,
-        memory_limit_mb: res.memory_limit_mb ?? 256,
-        starter_code: res.starter_code || starterCodeByLanguage[lang] || '',
-        test_cases: JSON.stringify(res.test_cases || [], null, 2),
         question_bank_id: res.question_bank_id,
         duration_minutes: res.duration_minutes || 60,
         question_count: res.questions?.length || 10,
@@ -314,29 +249,6 @@ const CodingTestsList: React.FC = () => {
       setOpen(true);
     } catch (e) {
       message.error('获取笔试详情失败');
-    }
-  };
-
-  const importFromLeetCode = async () => {
-    const url = form.getFieldValue('leetcode_url');
-    if (!url) {
-      message.error('请先粘贴力扣题目链接');
-      return;
-    }
-    setImportingLeetcode(true);
-    try {
-      const res = await request.post('/coding-tests/import/leetcode', { url });
-      if (res?.title) form.setFieldsValue({ title: res.title });
-      if (res?.description) form.setFieldsValue({ description: res.description });
-      if (res?.difficulty) form.setFieldsValue({ difficulty: res.difficulty });
-      if (Array.isArray(res?.test_cases)) {
-        form.setFieldsValue({ test_cases: JSON.stringify(res.test_cases, null, 2) });
-      }
-      message.success('已导入题目，可继续修改');
-    } catch (e) {
-      message.error('导入失败，请检查链接是否可访问');
-    } finally {
-      setImportingLeetcode(false);
     }
   };
 
@@ -349,15 +261,6 @@ const CodingTestsList: React.FC = () => {
       render: (type: string) => {
         const info = testTypeLabels[type] || { label: type, color: 'default' };
         return <Tag color={info.color} style={{ border: 'none' }}>{info.label}</Tag>;
-      },
-    },
-    {
-      title: '语言',
-      dataIndex: 'language',
-      key: 'language',
-      render: (v: string, record: any) => {
-        if (record.test_type !== 'algorithm') return '-';
-        return v ? v.toUpperCase() : '-';
       },
     },
     {
@@ -914,7 +817,6 @@ const CodingTestsList: React.FC = () => {
         <Form form={form} layout="vertical">
           <Form.Item name="test_type" label="笔试类型" rules={[{ required: true }]}>
             <Select onChange={handleTestTypeChange}>
-              <Select.Option value="algorithm">算法题</Select.Option>
               <Select.Option value="choice">选择题</Select.Option>
               <Select.Option value="essay">简答题</Select.Option>
             </Select>
@@ -951,71 +853,24 @@ const CodingTestsList: React.FC = () => {
             </Form.Item>
           </Space>
 
-          {testType === 'algorithm' && (
-            <>
-              <Divider>算法题设置</Divider>
-              
-              <Form.Item name="leetcode_url" label="力扣题目链接">
-                <Space.Compact style={{ width: '100%' }}>
-                  <Input placeholder="https://leetcode.cn/problems/two-sum/" />
-                  <Button icon={<ImportOutlined />} onClick={importFromLeetCode} loading={importingLeetcode}>一键导入</Button>
-                </Space.Compact>
-              </Form.Item>
-              
-              <Form.Item name="language" label="语言">
-                <Select
-                  options={[
-                    { value: 'javascript', label: 'JavaScript' },
-                    { value: 'python', label: 'Python' },
-                    { value: 'java', label: 'Java' },
-                  ]}
-                  onChange={handleLanguageChange}
-                />
-              </Form.Item>
-              
-              <Space style={{ width: '100%' }} size="large">
-                <Form.Item name="time_limit_ms" label="时限(ms)" style={{ flex: 1 }}>
-                  <Input placeholder="3000" />
-                </Form.Item>
-                <Form.Item name="memory_limit_mb" label="内存(MB)" style={{ flex: 1 }}>
-                  <Input placeholder="256" />
-                </Form.Item>
-              </Space>
-              
-              <Form.Item label="初始代码（必须包含 solution 函数）">
-                <Form.Item name="starter_code" noStyle getValueFromEvent={(v) => v}>
-                  <CodeEditor language={form.getFieldValue('language') || 'javascript'} height={260} />
-                </Form.Item>
-              </Form.Item>
-              
-              <Form.Item name="test_cases" label="测试用例（JSON 数组）" extra="格式：[{ input: [args...], expected: any }, ...]">
-                <TextArea rows={6} style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace' }} />
-              </Form.Item>
-            </>
-          )}
+          <Divider>题目设置</Divider>
 
-          {(testType === 'choice' || testType === 'essay') && (
-            <>
-              <Divider>题目设置</Divider>
-              
-              <Space style={{ width: '100%' }} size="large">
-                <Form.Item name="question_bank_id" label="题库" rules={[{ required: true, message: '请选择题库' }]} style={{ flex: 1 }}>
-                  <Select placeholder="请选择题库">
-                    {questionBanks.map((bank: any) => (
-                      <Select.Option key={bank.id} value={bank.id}>{bank.name}</Select.Option>
-                    ))}
-                  </Select>
-                </Form.Item>
-                <Form.Item name="question_count" label="题目数量" style={{ flex: 1 }}>
-                  <InputNumber min={1} max={50} style={{ width: '100%' }} />
-                </Form.Item>
-              </Space>
-              
-              <div style={{ color: '#64748B', fontSize: 13 }}>
-                创建后将自动从题库随机抽取题目。如题库中没有对应类型的题目，将抽取题库中的所有题目。
-              </div>
-            </>
-          )}
+          <Space style={{ width: '100%' }} size="large">
+            <Form.Item name="question_bank_id" label="题库" rules={[{ required: true, message: '请选择题库' }]} style={{ flex: 1 }}>
+              <Select placeholder="请选择题库">
+                {questionBanks.map((bank: any) => (
+                  <Select.Option key={bank.id} value={bank.id}>{bank.name}</Select.Option>
+                ))}
+              </Select>
+            </Form.Item>
+            <Form.Item name="question_count" label="题目数量" style={{ flex: 1 }}>
+              <InputNumber min={1} max={50} style={{ width: '100%' }} />
+            </Form.Item>
+          </Space>
+
+          <div style={{ color: '#64748B', fontSize: 13 }}>
+            创建后将自动从题库随机抽取题目。如题库中没有对应类型的题目，将抽取题库中的所有题目。
+          </div>
         </Form>
       </Modal>
 

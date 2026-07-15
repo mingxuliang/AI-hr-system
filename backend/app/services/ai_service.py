@@ -15,9 +15,21 @@ _DEFAULT_MODEL = os.getenv("OPENAI_MODEL") or os.getenv("LLM_MODEL") or "qwen3.5
 _DEFAULT_TEMPERATURE = 0.2
 _DEFAULT_BASE_URL_BY_PROVIDER = {
     "dashscope": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "siliconflow": "https://api.siliconflow.cn/v1",
     "openai": "https://api.openai.com/v1",
     "openai_compatible": None,
 }
+
+_DEFAULT_MODEL_BY_PROVIDER = {
+    "dashscope": "qwen3.5-plus",
+    "siliconflow": "Qwen/Qwen2.5-7B-Instruct",
+    "openai": "gpt-4o-mini",
+}
+
+# 硅基流动默认语音模型
+SILICONFLOW_DEFAULT_ASR_MODEL = "FunAudioLLM/SenseVoiceSmall"
+SILICONFLOW_DEFAULT_TTS_MODEL = "FunAudioLLM/CosyVoice2-0.5B"
+SILICONFLOW_DEFAULT_TTS_VOICE = "FunAudioLLM/CosyVoice2-0.5B:alex"
 
 _client_cache = None
 _client_cache_key = None
@@ -433,7 +445,9 @@ def chat_jd_stream(
         
         formatted_messages = [{"role": "system", "content": system_prompt}]
         for msg in messages:
-            formatted_messages.append({"role": msg["role"], "content": msg["content"]})
+            role = msg["role"] if isinstance(msg, dict) else msg.role
+            content = msg["content"] if isinstance(msg, dict) else msg.content
+            formatted_messages.append({"role": role, "content": content})
         
         stream = _get_client().chat.completions.create(
             model=cfg["llm_model"],

@@ -411,6 +411,10 @@ class SystemConfig(Base):
     llm_model = Column(String, default="qwen3.5-plus")
     llm_temperature = Column(Float, default=0.2)
     llm_max_tokens = Column(Integer)
+    # 语音：ASR / TTS（默认跟随硅基流动）
+    asr_model = Column(String, default="FunAudioLLM/SenseVoiceSmall")
+    tts_model = Column(String, default="FunAudioLLM/CosyVoice2-0.5B")
+    tts_voice = Column(String, default="FunAudioLLM/CosyVoice2-0.5B:alex")
     # 邮件服务配置
     smtp_host = Column(String)
     smtp_port = Column(Integer, default=465)

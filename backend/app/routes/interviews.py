@@ -41,6 +41,21 @@ class EmailPreviewRequest(BaseModel):
     interview_category: str = 'technical'
     interview_location: str = None
     meeting_link: str = None
+    contact_person: str = None
+    contact_phone: str = None
+
+
+def _resolve_resume_email(resume: Resume) -> Optional[str]:
+    """优先用简历表 email，缺省时回退到 AI 解析 JSON。"""
+    if resume.email:
+        return resume.email
+    parsed = resume.parsed_data if isinstance(resume.parsed_data, dict) else {}
+    email = parsed.get("email") or ""
+    contact_info = parsed.get("contact_info")
+    if not email and isinstance(contact_info, dict):
+        email = contact_info.get("email") or ""
+    return email or None
+
 
 @router.post("/{interview_id}/panel-score", response_model=InterviewPanelResponse)
 def submit_panel_score_route(
@@ -230,8 +245,8 @@ def preview_email_before_create(
         "interview_type": interview_type_text,
         "interview_location": preview_data.interview_location,
         "meeting_link": preview_data.meeting_link,
-        "contact_person": "HR",
-        "contact_phone": "",
+        "contact_person": (preview_data.contact_person or "").strip() or "HR",
+        "contact_phone": (preview_data.contact_phone or "").strip(),
         "company_name": "公司"
     }
 
@@ -239,7 +254,7 @@ def preview_email_before_create(
     subject = f"面试邀请 - {position.title} 岗位"
 
     return {
-        "to_email": resume.email,
+        "to_email": _resolve_resume_email(resume),
         "candidate_name": resume.candidate_name,
         "subject": subject,
         "content": html_content
@@ -450,7 +465,7 @@ def get_email_preview(
     subject = f"面试邀请 - {position.title} 岗位"
 
     return {
-        "to_email": resume.email,
+        "to_email": _resolve_resume_email(resume),
         "candidate_name": resume.candidate_name,
         "subject": subject,
         "content": html_content
@@ -475,12 +490,18 @@ def send_interview_email(
 
     # 获取候选人邮箱
     resume = db.query(Resume).filter(Resume.id == interview.resume_id).first()
-    if not resume or not resume.email:
+    to_email = _resolve_resume_email(resume) if resume else None
+    if not resume or not to_email:
         raise HTTPException(status_code=400, detail="候选人邮箱为空")
+
+    # 若表字段为空但解析结果有邮箱，回写一次便于后续使用
+    if not resume.email:
+        resume.email = to_email
+        db.commit()
 
     # 发送邮件
     success = mail_service._send_email(
-        to_email=resume.email,
+        to_email=to_email,
         subject=email_data.subject,
         html_content=email_data.content
     )
@@ -502,11 +523,10 @@ class DirectEvaluationRequest(BaseModel):
 def upload_full_interview_audio(
     interview_id: UUID,
     file: UploadFile = File(...),
-    background_tasks: BackgroundTasks = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """上传整场面试录音并进行AI分析"""
+    """上传整场面试录音并转写（不自动完结面试）"""
     from app.services.audio_service import transcribe_audio, format_transcript_for_display
 
     interview = get_interview(db, interview_id)
@@ -537,14 +557,8 @@ def upload_full_interview_audio(
         "full_interview": transcript_text,
         "full_interview_data": transcript_data
     }
+    # 仅保存转写，不在上传时直接完结面试；有题目时需等面试官提交评分后再分析
     db.commit()
-
-    if transcript_text and background_tasks:
-        background_tasks.add_task(
-            generate_evaluation_from_transcript,
-            interview_id,
-            transcript_text
-        )
 
     return {
         "message": "上传成功",

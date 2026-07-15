@@ -1,15 +1,50 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Button, Card, Form, Input, Space, Typography, message, Result, Switch, InputNumber, Divider, Tabs, Alert, Tag, Tooltip } from 'antd';
+import { Button, Card, Form, Input, Space, Typography, message, Result, Switch, InputNumber, Divider, Tabs, Alert, Tag, Tooltip, Select } from 'antd';
 import request from '../../utils/request';
 import { useAuth } from '../../contexts/AuthContext';
 
 const { Text } = Typography;
 
 type SystemSettings = {
+  llm_provider?: string | null;
   llm_base_url?: string | null;
   llm_model: string;
   llm_api_key_set: boolean;
   llm_api_key_last4?: string | null;
+  asr_model?: string | null;
+  tts_model?: string | null;
+  tts_voice?: string | null;
+};
+
+const PROVIDER_PRESETS: Record<string, { baseUrl: string; model: string; asr: string; tts: string; voice: string }> = {
+  siliconflow: {
+    baseUrl: 'https://api.siliconflow.cn/v1',
+    model: 'Qwen/Qwen2.5-7B-Instruct',
+    asr: 'FunAudioLLM/SenseVoiceSmall',
+    tts: 'FunAudioLLM/CosyVoice2-0.5B',
+    voice: 'FunAudioLLM/CosyVoice2-0.5B:alex',
+  },
+  dashscope: {
+    baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    model: 'qwen3.5-plus',
+    asr: 'FunAudioLLM/SenseVoiceSmall',
+    tts: 'FunAudioLLM/CosyVoice2-0.5B',
+    voice: 'FunAudioLLM/CosyVoice2-0.5B:alex',
+  },
+  openai: {
+    baseUrl: 'https://api.openai.com/v1',
+    model: 'gpt-4o-mini',
+    asr: 'FunAudioLLM/SenseVoiceSmall',
+    tts: 'FunAudioLLM/CosyVoice2-0.5B',
+    voice: 'FunAudioLLM/CosyVoice2-0.5B:alex',
+  },
+  openai_compatible: {
+    baseUrl: '',
+    model: '',
+    asr: 'FunAudioLLM/SenseVoiceSmall',
+    tts: 'FunAudioLLM/CosyVoice2-0.5B',
+    voice: 'FunAudioLLM/CosyVoice2-0.5B:alex',
+  },
 };
 
 type MailSettings = {
@@ -82,9 +117,13 @@ const SystemSettingsPage: React.FC = () => {
       const res = (await request.get('/settings/system')) as SystemSettings;
       setMeta(res);
       form.setFieldsValue({
+        llm_provider: res.llm_provider || 'siliconflow',
         llm_base_url: res.llm_base_url || undefined,
-        llm_model: res.llm_model || 'qwen3.5-plus',
+        llm_model: res.llm_model || 'Qwen/Qwen2.5-7B-Instruct',
         llm_api_key: '',
+        asr_model: res.asr_model || 'FunAudioLLM/SenseVoiceSmall',
+        tts_model: res.tts_model || 'FunAudioLLM/CosyVoice2-0.5B',
+        tts_voice: res.tts_voice || 'FunAudioLLM/CosyVoice2-0.5B:alex',
       });
       setEditingKey(false);
     } catch (e) {
@@ -210,8 +249,12 @@ const SystemSettingsPage: React.FC = () => {
     try {
       const values = await form.validateFields();
       const payload: any = {
+        llm_provider: values.llm_provider || 'siliconflow',
         llm_base_url: values.llm_base_url || null,
         llm_model: values.llm_model,
+        asr_model: values.asr_model || 'FunAudioLLM/SenseVoiceSmall',
+        tts_model: values.tts_model || 'FunAudioLLM/CosyVoice2-0.5B',
+        tts_voice: values.tts_voice || 'FunAudioLLM/CosyVoice2-0.5B:alex',
       };
       if (values.llm_api_key && values.llm_api_key.trim()) {
         payload.llm_api_key = values.llm_api_key.trim();
@@ -410,16 +453,46 @@ const SystemSettingsPage: React.FC = () => {
         <Form form={form} layout="vertical" autoComplete="off">
           <input type="text" name="username" autoComplete="username" style={{ display: 'none' }} />
           <input type="password" name="password" autoComplete="current-password" style={{ display: 'none' }} />
+
+          <Form.Item
+            name="llm_provider"
+            label="模型服务商"
+            rules={[{ required: true, message: '请选择服务商' }]}
+            extra={<Text type="secondary">选择硅基流动后，对话模型 / ASR / TTS 默认均使用硅基流动接口与同一套 API Key</Text>}
+          >
+            <Select
+              options={[
+                { value: 'siliconflow', label: '硅基流动 SiliconFlow' },
+                { value: 'dashscope', label: '阿里云 DashScope' },
+                { value: 'openai', label: 'OpenAI' },
+                { value: 'openai_compatible', label: '其他 OpenAI 兼容' },
+              ]}
+              onChange={(value: string) => {
+                const preset = PROVIDER_PRESETS[value];
+                if (!preset) return;
+                const patch: Record<string, string> = {
+                  llm_provider: value,
+                  asr_model: preset.asr,
+                  tts_model: preset.tts,
+                  tts_voice: preset.voice,
+                };
+                if (preset.baseUrl) patch.llm_base_url = preset.baseUrl;
+                if (preset.model) patch.llm_model = preset.model;
+                form.setFieldsValue(patch);
+              }}
+            />
+          </Form.Item>
+
           <Form.Item name="llm_base_url" label="Base URL">
-            <Input placeholder="例如：https://dashscope.aliyuncs.com/compatible-mode/v1" autoComplete="off" />
+            <Input placeholder="例如：https://api.siliconflow.cn/v1" autoComplete="off" />
           </Form.Item>
 
           <Form.Item
             name="llm_model"
-            label="Model"
+            label="对话模型 Model"
             rules={[{ required: true, message: '请输入 Model' }]}
           >
-            <Input placeholder="例如：qwen-plus / qwen3.5-plus" autoComplete="off" name="llm_model_field" />
+            <Input placeholder="例如：Qwen/Qwen2.5-7B-Instruct" autoComplete="off" name="llm_model_field" />
           </Form.Item>
 
           <Form.Item
@@ -430,7 +503,7 @@ const SystemSettingsPage: React.FC = () => {
                 <Text type="secondary">
                   {meta?.llm_api_key_set
                     ? `已设置${meta.llm_api_key_last4 ? `（末 4 位：${meta.llm_api_key_last4}）` : ''}，不会回显完整 Key`
-                    : '未设置，请先配置 API Key'}
+                    : '未设置，请先配置 API Key（硅基流动控制台获取）'}
                 </Text>
                 {meta?.llm_api_key_set && !editingKey ? (
                   <Button type="link" onClick={() => setEditingKey(true)} style={{ padding: 0, height: 'auto' }}>
@@ -457,6 +530,52 @@ const SystemSettingsPage: React.FC = () => {
               autoComplete="new-password"
               name="llm_api_key_field"
               disabled={!!(meta?.llm_api_key_set && !editingKey)}
+            />
+          </Form.Item>
+
+          <Divider orientation="left" plain>语音模型（默认硅基流动）</Divider>
+
+          <Form.Item
+            name="asr_model"
+            label="ASR 转写模型"
+            extra={<Text type="secondary">面试录音转文字，默认 FunAudioLLM/SenseVoiceSmall</Text>}
+          >
+            <Select
+              options={[
+                { value: 'FunAudioLLM/SenseVoiceSmall', label: 'FunAudioLLM/SenseVoiceSmall' },
+                { value: 'TeleAI/TeleSpeechASR', label: 'TeleAI/TeleSpeechASR' },
+              ]}
+              allowClear
+            />
+          </Form.Item>
+
+          <Form.Item
+            name="tts_model"
+            label="TTS 合成模型"
+            extra={<Text type="secondary">文本转语音，默认 CosyVoice2-0.5B</Text>}
+          >
+            <Select
+              options={[
+                { value: 'FunAudioLLM/CosyVoice2-0.5B', label: 'FunAudioLLM/CosyVoice2-0.5B' },
+                { value: 'fnlp/MOSS-TTSD-v0.5', label: 'fnlp/MOSS-TTSD-v0.5' },
+              ]}
+              allowClear
+            />
+          </Form.Item>
+
+          <Form.Item name="tts_voice" label="TTS 音色">
+            <Select
+              options={[
+                { value: 'FunAudioLLM/CosyVoice2-0.5B:alex', label: 'alex' },
+                { value: 'FunAudioLLM/CosyVoice2-0.5B:anna', label: 'anna' },
+                { value: 'FunAudioLLM/CosyVoice2-0.5B:bella', label: 'bella' },
+                { value: 'FunAudioLLM/CosyVoice2-0.5B:benjamin', label: 'benjamin' },
+                { value: 'FunAudioLLM/CosyVoice2-0.5B:charles', label: 'charles' },
+                { value: 'FunAudioLLM/CosyVoice2-0.5B:claire', label: 'claire' },
+                { value: 'FunAudioLLM/CosyVoice2-0.5B:david', label: 'david' },
+                { value: 'FunAudioLLM/CosyVoice2-0.5B:diana', label: 'diana' },
+              ]}
+              allowClear
             />
           </Form.Item>
         </Form>
