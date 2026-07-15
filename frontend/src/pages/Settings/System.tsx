@@ -533,7 +533,7 @@ const SystemSettingsPage: React.FC = () => {
             />
           </Form.Item>
 
-          <Divider orientation="left" plain>语音模型（默认硅基流动）</Divider>
+          <Divider plain>语音模型（默认硅基流动）</Divider>
 
           <Form.Item
             name="asr_model"
