@@ -3,6 +3,7 @@ import { Form, Button, Card, Upload, Select, message } from 'antd';
 import { UploadOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import request from '../../utils/request';
+import { RESUME_ACCEPT, resumeFileError } from '../../utils/resumeFile';
 
 const ResumeUpload: React.FC = () => {
   const [form] = Form.useForm();
@@ -55,16 +56,16 @@ const ResumeUpload: React.FC = () => {
       setFileList([]);
     },
     beforeUpload: (file) => {
-      const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
-      if (!isPdf) {
-        message.error('只允许上传 PDF 格式的文件');
+      const error = resumeFileError(file);
+      if (error) {
+        message.error(error);
         return Upload.LIST_IGNORE;
       }
       setFileList([file]);
       return false;
     },
     fileList,
-    accept: '.pdf',
+    accept: RESUME_ACCEPT,
   };
 
   return (
@@ -92,7 +93,7 @@ const ResumeUpload: React.FC = () => {
           name="file"
           label="简历文件"
           rules={[{ required: true, message: '请上传简历' }]}
-          extra="仅支持 PDF 格式"
+          extra="支持 PDF、Word（doc/docx）、TXT、Markdown，不超过 10MB"
         >
           <Upload {...uploadProps}>
             <Button icon={<UploadOutlined />}>选择文件</Button>

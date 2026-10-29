@@ -357,6 +357,16 @@ const InterviewScore: React.FC = () => {
   // 整场面试录音功能（带实时转写）
   const startFullRecording = async () => {
     try {
+      // 浏览器仅允许在安全上下文（HTTPS / localhost）调用麦克风
+      if (!window.isSecureContext) {
+        message.error('当前为 HTTP 访问，浏览器禁止使用麦克风。请通过 HTTPS 域名访问本系统');
+        return;
+      }
+      if (!navigator.mediaDevices?.getUserMedia) {
+        message.error('当前浏览器不支持录音，请换用 Chrome / Edge');
+        return;
+      }
+
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
       const chunks: BlobPart[] = [];
@@ -418,8 +428,15 @@ const InterviewScore: React.FC = () => {
       }
 
       message.success('开始录制面试');
-    } catch (error) {
-      message.error('无法访问麦克风，请检查权限设置');
+    } catch (error: any) {
+      const name = error?.name || '';
+      if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+        message.error('麦克风权限被拒绝，请在浏览器地址栏左侧允许麦克风后重试');
+      } else if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+        message.error('未检测到麦克风设备');
+      } else {
+        message.error('无法访问麦克风，请检查权限设置');
+      }
     }
   };
 

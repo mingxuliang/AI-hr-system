@@ -23,6 +23,9 @@ import UsersList from '../pages/Settings/Users';
 import ProfileSettings from '../pages/Settings/Profile';
 import SystemSettingsPage from '../pages/Settings/System';
 import PublicReview from '../pages/Public/Review';
+import CampusList from '../pages/Campus/List';
+import CampusDetail from '../pages/Campus/Detail';
+import CampusApply from '../pages/Public/CampusApply';
 import WorkflowsList from '../pages/Workflows/List';
 import WorkflowEditor from '../pages/Workflows/Editor';
 import { useAuth } from '../contexts/AuthContext';
@@ -64,6 +67,10 @@ const router = createBrowserRouter([
     element: <PublicReview />,
   },
   {
+    path: '/public/campus/:id',
+    element: <CampusApply />,
+  },
+  {
     path: '/',
     element: (
       <ProtectedRoute>
@@ -82,6 +89,14 @@ const router = createBrowserRouter([
       {
         path: 'positions',
         element: <PositionsList />,
+      },
+      {
+        path: 'campus',
+        element: <CampusList />,
+      },
+      {
+        path: 'campus/:id',
+        element: <CampusDetail />,
       },
       {
         path: 'positions/new',

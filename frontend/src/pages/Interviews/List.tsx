@@ -872,8 +872,12 @@ const InterviewsList: React.FC = () => {
           </Row>
 
           {pendingInterviewData?.interview_type === 'video' && (
-            <Form.Item name="meeting_link" label="腾讯会议地址">
-              <Input placeholder="例如：https://meeting.tencent.com/..." size="large" />
+            <Form.Item
+              name="meeting_link"
+              label="腾讯会议地址"
+              extra="请填写 https://meeting.tencent.com/... 链接；也可粘贴完整邀请文案（系统会自动提取链接）"
+            >
+              <Input.TextArea rows={3} placeholder="https://meeting.tencent.com/dm/xxxxx" size="large" />
             </Form.Item>
           )}
 

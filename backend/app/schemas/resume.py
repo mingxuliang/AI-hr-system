@@ -82,6 +82,10 @@ class ResumeResponse(ResumeBase):
     reject_reason_detail: Optional[str] = None
     rejected_at: Optional[datetime] = None
     rejected_by: Optional[UUID] = None
+    campus_project_id: Optional[UUID] = None
+    school: Optional[str] = None
+    major: Optional[str] = None
+    company: Optional[str] = None
     created_at: datetime
     position: Optional[PositionResponse] = None
     department_reviews: Optional[List["DepartmentReviewResponse"]] = None

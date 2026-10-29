@@ -14,6 +14,7 @@ export const ROUTE_META: RouteMeta[] = [
   { path: '/coding-tests',     group: '招聘管理', label: '笔试管理' },
   { path: '/interviews',       group: '招聘管理', label: '面试管理' },
   { path: '/positions',        group: '招聘管理', label: '岗位管理' },
+  { path: '/campus',           group: '招聘管理', label: '校招管理' },
   { path: '/workflows',        group: '自动化',   label: '工作流' },
   { path: '/resumes',          group: '招聘管理', label: '简历管理' },
   { path: '/offers',           group: '人才中心', label: 'Offer管理' },
@@ -23,6 +24,9 @@ export const ROUTE_META: RouteMeta[] = [
 export function resolveRouteMeta(pathname: string): RouteMeta {
   if (pathname.startsWith('/workflows/') && pathname !== '/workflows') {
     return { path: pathname, group: '自动化', label: '工作流编辑' };
+  }
+  if (pathname.startsWith('/campus/') && pathname !== '/campus') {
+    return { path: pathname, group: '招聘管理', label: '校招详情' };
   }
 
   const match = ROUTE_META.find(

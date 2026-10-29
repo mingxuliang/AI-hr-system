@@ -1,7 +1,10 @@
 import os
 import shutil
-from fastapi import UploadFile
+from fastapi import HTTPException, UploadFile
 from uuid import uuid4
+
+RESUME_EXTENSIONS = {".pdf", ".doc", ".docx", ".txt", ".md", ".markdown"}
+MAX_RESUME_BYTES = 10 * 1024 * 1024
 
 UPLOAD_DIR = "uploads"
 
@@ -21,3 +24,18 @@ def save_upload_file(upload_file: UploadFile, sub_dir: str = "") -> str:
         shutil.copyfileobj(upload_file.file, buffer)
         
     return file_path
+
+
+def validate_resume_file(file: UploadFile):
+    filename = file.filename or ""
+    ext = os.path.splitext(filename)[1].lower()
+    if ext not in RESUME_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="只支持 PDF、Word（doc/docx）、TXT、Markdown")
+    file.file.seek(0, 2)
+    size = file.file.tell()
+    file.file.seek(0)
+    if size > MAX_RESUME_BYTES:
+        raise HTTPException(status_code=400, detail="文件大小不能超过 10MB")
+    if size == 0:
+        raise HTTPException(status_code=400, detail="文件为空")
+    return file

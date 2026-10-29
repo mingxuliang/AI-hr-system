@@ -89,7 +89,7 @@ def cleanup_demo_data(db) -> None:
 
 
 def get_or_create_admin(db) -> User:
-    email = os.getenv("INITIAL_ADMIN_EMAIL", "admin@example.com")
+    email = os.getenv("INITIAL_ADMIN_EMAIL", "admin")
     admin = db.query(User).filter(User.email == email).first()
     if admin:
         return admin

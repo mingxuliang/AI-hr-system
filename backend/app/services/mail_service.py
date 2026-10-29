@@ -31,10 +31,48 @@ jinja_env = Environment(
 )
 
 
+def normalize_meeting_link(url: Optional[str]) -> Optional[str]:
+    """从粘贴文案中提取腾讯会议等可点击的绝对链接。"""
+    if not url:
+        return None
+    text = str(url).strip()
+    if not text:
+        return None
+
+    # 只取 meeting.tencent.com 等会议域名，避免把整段邀请文案当成相对路径
+    m = re.search(
+        r'https?://(?:[\w-]+\.)?meeting\.tencent\.com/[^\s<>"\'）)】\]}>，,；;]+',
+        text,
+        flags=re.I,
+    )
+    if m:
+        return m.group(0).rstrip('.,;:，。；：、')
+
+    for host in (
+        r'voovmeeting\.com',
+        r'zoom\.us',
+        r'zoom\.com',
+        r'teams\.microsoft\.com',
+        r'meeting\.dingtalk\.com',
+        r'feishu\.cn',
+        r'larksuite\.com',
+    ):
+        m = re.search(rf'https?://(?:[\w-]+\.)?{host}/[^\s<>"\']+', text, flags=re.I)
+        if m:
+            return m.group(0).rstrip('.,;:，。；：、')
+
+    # 整段就是干净的绝对链接
+    if re.match(r'^https?://\S+$', text, re.I):
+        return text.rstrip('.,;:，。；：、')
+
+    return None
+
+
 class EmailConfig:
     """邮件配置类"""
     def __init__(self, db: Session):
-        config = db.query(SystemConfig).first()
+        # 与 settings 路由一致：取最近更新的一条，避免多行配置时读到空记录
+        config = db.query(SystemConfig).order_by(SystemConfig.updated_at.desc()).first()
         if config:
             self.smtp_host = config.smtp_host
             self.smtp_port = config.smtp_port or 465
@@ -179,7 +217,7 @@ class MailService:
             "interview_round": interview_round,
             "interview_type": interview_type,
             "interview_location": interview_location,
-            "meeting_link": meeting_link,
+            "meeting_link": normalize_meeting_link(meeting_link),
             "contact_person": contact_person or "HR",
             "contact_phone": contact_phone or "",
             "company_name": company_name
@@ -235,7 +273,7 @@ class MailService:
             "interview_round": interview_round,
             "reminder_time": reminder_type,
             "interview_location": interview_location,
-            "meeting_link": meeting_link,
+            "meeting_link": normalize_meeting_link(meeting_link),
             "company_name": company_name
         }
 

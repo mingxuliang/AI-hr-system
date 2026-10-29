@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Boolean, DateTime, Text, Enum, JSON, Integer, ForeignKey, Float
+from sqlalchemy import Column, String, Boolean, DateTime, Text, Enum, JSON, Integer, ForeignKey, Float, Table
 from sqlalchemy.dialects.postgresql import UUID, ARRAY
 import uuid
 from datetime import datetime
@@ -59,6 +59,32 @@ class Position(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     hiring_manager = relationship("User", foreign_keys=[hiring_manager_id])
+
+
+class CampusProjectStatus(str, enum.Enum):
+    ACTIVE = "active"
+    CLOSED = "closed"
+
+
+campus_project_positions = Table(
+    "campus_project_positions",
+    Base.metadata,
+    Column("project_id", UUID(as_uuid=True), ForeignKey("campus_projects.id", ondelete="CASCADE"), primary_key=True),
+    Column("position_id", UUID(as_uuid=True), ForeignKey("positions.id", ondelete="CASCADE"), primary_key=True),
+)
+
+
+class CampusProject(Base):
+    __tablename__ = "campus_projects"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    school = Column(String, nullable=False)
+    company = Column(String, nullable=True)
+    title = Column(String, nullable=False)
+    status = Column(String, nullable=False, default=CampusProjectStatus.ACTIVE.value)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    positions = relationship("Position", secondary=campus_project_positions)
 
 class QuestionCategory(str, enum.Enum):
     TECHNICAL = "technical"
@@ -146,9 +172,14 @@ class Resume(Base):
     reject_reason_detail = Column(Text, nullable=True)
     rejected_at = Column(DateTime, nullable=True)
     rejected_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    campus_project_id = Column(UUID(as_uuid=True), ForeignKey("campus_projects.id", ondelete="SET NULL"), nullable=True, index=True)
+    school = Column(String, nullable=True)
+    major = Column(String, nullable=True)
+    company = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     position = relationship("Position")
+    campus_project = relationship("CampusProject")
     rejector = relationship("User", foreign_keys=[rejected_by])
     department_reviews = relationship("DepartmentReview", back_populates="resume")
 

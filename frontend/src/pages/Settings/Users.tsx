@@ -144,7 +144,7 @@ const UsersList: React.FC = () => {
 
   const columns = [
     { title: '姓名', dataIndex: 'full_name', key: 'full_name', width: 150 },
-    { title: '邮箱', dataIndex: 'email', key: 'email', width: 200 },
+    { title: '用户名', dataIndex: 'email', key: 'email', width: 200 },
     {
       title: '角色',
       dataIndex: 'role',
@@ -243,8 +243,16 @@ const UsersList: React.FC = () => {
       >
         <Form form={form} layout="vertical">
           {!isEditModal && (
-            <Form.Item name="email" label="邮箱" rules={[{ required: true, type: 'email', message: '请输入有效的邮箱地址' }]}>
-              <Input placeholder="请输入邮箱" />
+            <Form.Item
+              name="email"
+              label="用户名"
+              rules={[
+                { required: true, message: '请输入用户名' },
+                { min: 2, max: 64, message: '用户名长度为 2–64 个字符' },
+                { pattern: /^\S+$/, message: '用户名不能包含空格' },
+              ]}
+            >
+              <Input placeholder="例如 admin" autoComplete="off" />
             </Form.Item>
           )}
           <Form.Item name="full_name" label="姓名" rules={[{ required: true, message: '请输入姓名' }]}>

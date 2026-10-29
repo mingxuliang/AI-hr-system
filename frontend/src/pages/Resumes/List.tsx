@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { Table, Button, Space, message, Tag, Modal, Tooltip, Typography, Form, Select, Upload, Input, DatePicker, InputNumber, Card, Row, Col, Checkbox } from 'antd';
 import { PlusOutlined, EyeOutlined, TeamOutlined, DeleteOutlined, UploadOutlined, ReloadOutlined, CloseCircleOutlined, SearchOutlined, UndoOutlined, SolutionOutlined, SyncOutlined } from '@ant-design/icons';
 import request from '../../utils/request';
+import { RESUME_ACCEPT, resumeFileError } from '../../utils/resumeFile';
 import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
 
@@ -43,13 +44,15 @@ const ResumesList: React.FC = () => {
 
   const [searchName, setSearchName] = useState('');
   const [searchStatus, setSearchStatus] = useState<string | undefined>(undefined);
+  const [searchRecruitType, setSearchRecruitType] = useState<string | undefined>(undefined);
 
-  const fetchResumes = async (silent = false) => {
+  const fetchResumes = async (silent = false, recruitType = searchRecruitType) => {
     if (!silent) setLoading(true);
     try {
       const params: any = {};
       if (searchName) params.candidate_name = searchName;
       if (searchStatus) params.status = searchStatus;
+      if (recruitType) params.recruit_type = recruitType;
 
       // 如果是面试官，只显示被指派给自己的简历
       if (user?.role === 'interviewer') {
@@ -133,6 +136,7 @@ const ResumesList: React.FC = () => {
   const handleReset = () => {
     setSearchName('');
     setSearchStatus(undefined);
+    setSearchRecruitType(undefined);
     setLoading(true);
     request.get('/resumes')
       .then(res => {
@@ -544,9 +548,9 @@ const ResumesList: React.FC = () => {
       });
     },
     beforeUpload: (file: any) => {
-      const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
-      if (!isPdf) {
-        message.error('只允许上传 PDF 格式的文件');
+      const error = resumeFileError(file);
+      if (error) {
+        message.error(error);
         return Upload.LIST_IGNORE;
       }
       setFileList((prev) => [...prev, file]);
@@ -554,7 +558,7 @@ const ResumesList: React.FC = () => {
     },
     fileList,
     multiple: true,
-    accept: '.pdf'
+    accept: RESUME_ACCEPT
   };
 
   const columns = [
@@ -565,23 +569,43 @@ const ResumesList: React.FC = () => {
       render: (text: string) => <span style={{ fontWeight: 500, color: '#0F172A' }}>{text || '解析中...'}</span>
     },
     { title: '联系方式', dataIndex: 'contact', key: 'contact' },
+    { title: '学校', dataIndex: 'school', key: 'school', render: (text: string) => text || '-' },
+    { title: '专业', dataIndex: 'major', key: 'major', render: (text: string) => text || '-' },
+    {
+      title: '招聘类型',
+      key: 'recruit_type',
+      width: 100,
+      render: (_: unknown, record: any) => (
+        record.campus_project_id
+          ? <Tag color="cyan">校招</Tag>
+          : <Tag>社招</Tag>
+      ),
+    },
     { title: '应聘岗位', dataIndex: ['position', 'title'], key: 'position' },
     { 
       title: '匹配度', 
       dataIndex: 'match_score', 
       key: 'match_score', 
-      sorter: (a: any, b: any) => a.match_score - b.match_score,
-      render: (score: number) => (
-        <span style={{ 
-          color: '#2563EB',
-          fontWeight: 600,
-          background: '#EFF6FF',
-          padding: '2px 10px',
-          borderRadius: 6,
-        }}>
-          {score > 0 ? `${score}分` : '-'}
-        </span>
-      )
+      sorter: (a: any, b: any) => (a.match_score ?? -1) - (b.match_score ?? -1),
+      render: (score: number, record: any) => {
+        if (record?.parse_status === 'failed' && !(score > 0)) {
+          return <Tag color="error">解析失败</Tag>;
+        }
+        if (record?.parse_status !== 'success' && !(score > 0)) {
+          return <Tag color="processing">解析中</Tag>;
+        }
+        return (
+          <span style={{ 
+            color: '#2563EB',
+            fontWeight: 600,
+            background: '#EFF6FF',
+            padding: '2px 10px',
+            borderRadius: 6,
+          }}>
+            {score > 0 ? `${score}分` : '-'}
+          </span>
+        );
+      }
     },
     { 
       title: '状态', 
@@ -723,6 +747,20 @@ const ResumesList: React.FC = () => {
               </Select>
               <Button icon={<SearchOutlined />} onClick={handleSearch}>搜索</Button>
               <Button onClick={handleReset}>重置</Button>
+              <Select
+                placeholder="全部类型"
+                value={searchRecruitType}
+                onChange={(val) => {
+                  setSearchRecruitType(val);
+                  fetchResumes(false, val);
+                }}
+                style={{ width: 140 }}
+                allowClear
+                options={[
+                  { value: 'social', label: '社招' },
+                  { value: 'campus', label: '校招' },
+                ]}
+              />
             </>
           )}
 
@@ -791,7 +829,7 @@ const ResumesList: React.FC = () => {
             name="file"
             label="简历文件"
             rules={[{ required: true, message: '请上传简历文件' }]}
-            extra="仅支持 PDF 格式，可批量上传"
+            extra="支持 PDF、Word（doc/docx）、TXT、Markdown，可批量上传，单个不超过 10MB"
           >
             <Upload {...uploadProps} maxCount={10}>
               <Button icon={<UploadOutlined />} size="large">选择文件（可多选）</Button>
@@ -1033,8 +1071,12 @@ const ResumesList: React.FC = () => {
           </Row>
 
           {pendingInterviewData?.interview_type === 'video' && (
-            <Form.Item name="meeting_link" label="腾讯会议地址">
-              <Input placeholder="例如：https://meeting.tencent.com/..." size="large" />
+            <Form.Item
+              name="meeting_link"
+              label="腾讯会议地址"
+              extra="请填写 https://meeting.tencent.com/... 链接；也可粘贴完整邀请文案（系统会自动提取链接）"
+            >
+              <Input.TextArea rows={3} placeholder="https://meeting.tencent.com/dm/xxxxx" size="large" />
             </Form.Item>
           )}
 

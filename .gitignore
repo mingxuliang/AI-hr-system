@@ -65,6 +65,8 @@ node_modules/
 *.sw?
 # OS specific
 
+frontend/public/public-base.json
+
 # Task files
 # tasks.json
 # tasks/ 

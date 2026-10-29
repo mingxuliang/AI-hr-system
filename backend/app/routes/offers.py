@@ -91,7 +91,7 @@ def send_offer(
 ):
     try:
         from app.models.models import SystemConfig
-        config = db.query(SystemConfig).first()
+        config = db.query(SystemConfig).order_by(SystemConfig.updated_at.desc()).first()
         base_url = "http://localhost:5173"
         if config and hasattr(config, 'frontend_url') and config.frontend_url:
             base_url = config.frontend_url

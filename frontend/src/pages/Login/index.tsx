@@ -92,13 +92,14 @@ const Login: React.FC = () => {
           <Form name="login" onFinish={onFinish} layout="vertical" size="large">
             <Form.Item
               name="email"
-              label={<span className="login-label">邮箱账号</span>}
-              rules={[{ required: true, message: '请输入邮箱' }]}
+              label={<span className="login-label">用户名</span>}
+              rules={[{ required: true, message: '请输入用户名' }]}
             >
               <Input
                 prefix={<UserOutlined style={{ color: '#94A3B8' }} />}
-                placeholder="请输入邮箱地址"
+                placeholder="请输入用户名"
                 className="login-input"
+                autoComplete="username"
               />
             </Form.Item>
 

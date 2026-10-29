@@ -196,7 +196,7 @@ def preview_email_before_create(
     current_user: User = Depends(get_current_user)
 ):
     """在创建面试前预览邮件内容"""
-    from app.services.mail_service import get_mail_service
+    from app.services.mail_service import get_mail_service, normalize_meeting_link
     from datetime import datetime
 
     # 获取简历和岗位信息
@@ -244,7 +244,7 @@ def preview_email_before_create(
         "interview_category": interview_category_text,
         "interview_type": interview_type_text,
         "interview_location": preview_data.interview_location,
-        "meeting_link": preview_data.meeting_link,
+        "meeting_link": normalize_meeting_link(preview_data.meeting_link),
         "contact_person": (preview_data.contact_person or "").strip() or "HR",
         "contact_phone": (preview_data.contact_phone or "").strip(),
         "company_name": "公司"
@@ -403,7 +403,7 @@ def get_email_preview(
     current_user: User = Depends(get_current_user)
 ):
     """获取面试邀请邮件预览"""
-    from app.services.mail_service import get_mail_service
+    from app.services.mail_service import get_mail_service, normalize_meeting_link
 
     interview = get_interview(db, interview_id)
     if not interview:
@@ -455,7 +455,7 @@ def get_email_preview(
         "interview_category": interview_category_text,
         "interview_type": interview_type_text,
         "interview_location": interview_location,
-        "meeting_link": meeting_link,
+        "meeting_link": normalize_meeting_link(meeting_link),
         "contact_person": "HR",
         "contact_phone": "",
         "company_name": "公司"

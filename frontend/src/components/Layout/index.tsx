@@ -16,6 +16,7 @@ import {
   MenuUnfoldOutlined,
   SnippetsOutlined,
   SolutionOutlined,
+  QrcodeOutlined,
   UsergroupAddOutlined,
   CaretDownOutlined,
 } from '@ant-design/icons';
@@ -46,6 +47,7 @@ const AppLayout: React.FC = () => {
       title: '招聘管理',
       items: [
         { key: '/positions',    icon: <SolutionOutlined />,  label: '岗位管理', roles: ['admin', 'hr'] },
+        { key: '/campus',       icon: <QrcodeOutlined />,    label: '校招管理', roles: ['admin', 'hr'] },
         { key: '/resumes',      icon: <ContactsOutlined />,  label: '简历管理' },
         { key: '/interviews',   icon: <CalendarOutlined />,  label: '面试管理' },
         { key: '/coding-tests', icon: <EditOutlined />,      label: '笔试管理', roles: ['admin', 'hr'] },

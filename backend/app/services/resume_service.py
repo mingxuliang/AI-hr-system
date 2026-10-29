@@ -21,20 +21,82 @@ from datetime import datetime
 from sqlalchemy import or_, and_, func
 import json
 
+def _is_doc_char(code: int) -> bool:
+    if code in (9, 10, 13, 32):
+        return True
+    if 33 <= code <= 126:
+        return True
+    if 0x00A0 <= code <= 0x024F:
+        return True
+    if 0x3000 <= code <= 0x303F or 0xFF00 <= code <= 0xFFEF:
+        return True
+    if 0x4E00 <= code <= 0x9FFF:
+        return True
+    return False
+
+
+def _read_docx(file_path: str) -> str:
+    document = docx.Document(file_path)
+    parts = [para.text.strip() for para in document.paragraphs if para.text and para.text.strip()]
+    for table in document.tables:
+        for row in table.rows:
+            cells = []
+            for cell in row.cells:
+                text = (cell.text or "").strip()
+                if text and text not in cells:
+                    cells.append(text)
+            if cells:
+                parts.append(" | ".join(cells))
+    return "\n".join(parts)
+
+
+def _extract_utf16_runs(raw: bytes, offset: int) -> str:
+    runs = []
+    current = []
+    i = offset
+    while i + 1 < len(raw):
+        code = raw[i] | (raw[i + 1] << 8)
+        if _is_doc_char(code):
+            current.append("\n" if code in (10, 13) else chr(code))
+            i += 2
+            continue
+        text = "".join(current).strip()
+        if len(text) >= 2:
+            runs.append(text)
+        current = []
+        i += 2
+    tail = "".join(current).strip()
+    if len(tail) >= 2:
+        runs.append(tail)
+    return "\n".join(runs).strip()
+
+
+def _read_legacy_doc(file_path: str) -> str:
+    with open(file_path, "rb") as f:
+        raw = f.read()
+    if raw[:2] == b"PK":
+        return _read_docx(file_path)
+    even = _extract_utf16_runs(raw, 0)
+    odd = _extract_utf16_runs(raw, 1)
+    return even if len(even) >= len(odd) else odd
+
+
 def read_file_content(file_path: str) -> str:
     _, ext = os.path.splitext(file_path)
+    ext = ext.lower()
     content = ""
     try:
-        if ext == '.docx':
-            doc = docx.Document(file_path)
-            content = '\n'.join([para.text for para in doc.paragraphs])
-        elif ext == '.pdf':
-            with open(file_path, 'rb') as f:
+        if ext == ".docx":
+            content = _read_docx(file_path)
+        elif ext == ".doc":
+            content = _read_legacy_doc(file_path)
+        elif ext == ".pdf":
+            with open(file_path, "rb") as f:
                 reader = PyPDF2.PdfReader(f)
                 for page in reader.pages:
-                    content += page.extract_text()
-        elif ext in ('.txt', '.md', '.markdown'):
-            with open(file_path, 'r', encoding='utf-8') as f:
+                    content += page.extract_text() or ""
+        elif ext in (".txt", ".md", ".markdown"):
+            with open(file_path, "r", encoding="utf-8") as f:
                 content = f.read()
         else:
             print(f"Unsupported file type: {ext}")
@@ -227,7 +289,8 @@ def on_resume_parse_failure(payload: Dict[str, Any], error: str):
         if resume:
             resume.parse_status = "failed"
             resume.parse_error = f"解析失败（重试后）: {error[:400]}"
-            resume.candidate_name = "解析失败"
+            if not resume.candidate_name or resume.candidate_name == "解析中...":
+                resume.candidate_name = "解析失败"
             db.commit()
             print(f"[TaskQueue] Updated resume {resume_id} status to failed")
     except Exception as e:
@@ -313,7 +376,7 @@ def reparse_resume(db: Session, resume_id: UUID, background_tasks: BackgroundTas
     background_tasks.add_task(process_resume_background, resume.id, resume.position_id)
     return resume
 
-def get_resumes(db: Session, skip: int = 0, limit: int = 100, candidate_name: str = None, status: str = None, position_id: UUID = None, reviewer_id: UUID = None):
+def get_resumes(db: Session, skip: int = 0, limit: int = 100, candidate_name: str = None, status: str = None, position_id: UUID = None, reviewer_id: UUID = None, recruit_type: str = None):
     query = db.query(Resume).options(joinedload(Resume.position))
 
     if candidate_name:
@@ -321,6 +384,11 @@ def get_resumes(db: Session, skip: int = 0, limit: int = 100, candidate_name: st
 
     if status:
         query = query.filter(Resume.status == status)
+
+    if recruit_type == "campus":
+        query = query.filter(Resume.campus_project_id.isnot(None))
+    elif recruit_type == "social":
+        query = query.filter(Resume.campus_project_id.is_(None))
 
     if position_id:
         query = query.filter(Resume.position_id == position_id)
@@ -531,7 +599,7 @@ def _send_hr_review_notification(db: Session, resume: Resume, reviews: List[Depa
         if not mail_service.config.is_valid():
             return
         
-        system_config = db.query(SystemConfig).first()
+        system_config = db.query(SystemConfig).order_by(SystemConfig.updated_at.desc()).first()
         frontend_url = system_config.frontend_url if system_config else "http://localhost:5173"
         
         recommend_count = sum(1 for r in reviews if r.recommendation == ReviewRecommendation.RECOMMEND)

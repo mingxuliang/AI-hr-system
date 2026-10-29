@@ -68,8 +68,11 @@
                                             {% if meeting_link %}
                                             <tr>
                                                 <td style="padding: 8px 0; color: #666; font-size: 14px;">会议链接</td>
-                                                <td style="padding: 8px 0; color: #f5576c; font-size: 14px; font-weight: 600;">
-                                                    <a href="{{meeting_link}}" style="color: #f5576c; text-decoration: none;">点击进入会议</a>
+                                                <td style="padding: 8px 0; font-size: 14px;">
+                                                    <a href="{{ meeting_link }}" target="_blank" rel="noopener noreferrer" style="color: #f5576c; text-decoration: underline; font-weight: 600;">点击进入会议</a>
+                                                    <div style="margin-top: 6px; word-break: break-all;">
+                                                        <a href="{{ meeting_link }}" target="_blank" rel="noopener noreferrer" style="color: #1677ff; text-decoration: underline; font-size: 12px;">{{ meeting_link }}</a>
+                                                    </div>
                                                 </td>
                                             </tr>
                                             {% endif %}

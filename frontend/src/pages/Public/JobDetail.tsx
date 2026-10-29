@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Card, Typography, Tag, Descriptions, Button, Divider, Form, Input, Upload, message, Result, Spin } from 'antd';
 import { UploadOutlined, ArrowLeftOutlined } from '@ant-design/icons';
 import request from '../../utils/request';
+import { RESUME_ACCEPT, RESUME_FORMAT_HINT, resumeFileError } from '../../utils/resumeFile';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -188,19 +189,19 @@ const PublicJobDetail: React.FC = () => {
                 name="file"
                 label="简历附件"
                 rules={[{ required: true, message: '请上传您的简历文件' }]}
-                extra="仅支持 PDF 格式，大小不超过 10MB"
+                extra={RESUME_FORMAT_HINT}
               >
                 <Upload 
                   maxCount={1}
                   beforeUpload={(file) => {
-                    const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
-                    if (!isPdf) {
-                      message.error('只允许上传 PDF 格式的文件');
+                    const error = resumeFileError(file);
+                    if (error) {
+                      message.error(error);
                       return Upload.LIST_IGNORE;
                     }
                     return false;
                   }}
-                  accept=".pdf"
+                  accept={RESUME_ACCEPT}
                 >
                   <Button icon={<UploadOutlined />}>上传简历</Button>
                 </Upload>

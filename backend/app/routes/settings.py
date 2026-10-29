@@ -218,19 +218,28 @@ def update_mail_settings(
 @router.post("/mail/test")
 def test_mail_settings(
     db: Session = Depends(get_db),
-    _current_user=Depends(check_roles([UserRole.ADMIN])),
+    current_user=Depends(check_roles([UserRole.ADMIN])),
 ):
-    """测试邮件配置"""
+    """测试邮件配置：校验字段并尝试 SMTP 登录"""
+    import smtplib
     from app.services.mail_service import get_mail_service
 
     mail_service = get_mail_service(db)
+    cfg = mail_service.config
 
-    if not mail_service.config.is_valid():
-        raise HTTPException(status_code=400, detail="邮件配置不完整或未启用")
+    if not cfg.is_valid():
+        missing = "、".join(cfg.missing_fields()) or "未知项"
+        raise HTTPException(status_code=400, detail=f"邮件配置不完整或未启用：缺少 {missing}")
 
-    # 发送测试邮件给当前用户
-    # 这里简化处理，实际应该发送给当前用户的邮箱
-    return {"message": "邮件配置有效"}
+    try:
+        with smtplib.SMTP_SSL(cfg.smtp_host, cfg.smtp_port, timeout=20) as server:
+            server.login(cfg.smtp_username, cfg.smtp_password)
+    except smtplib.SMTPAuthenticationError:
+        raise HTTPException(status_code=400, detail="SMTP 认证失败：请检查用户名或授权码")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"SMTP 连接失败：{e}")
+
+    return {"message": "邮件配置有效，SMTP 登录成功"}
 
 
 @router.get("/prompts", response_model=PromptConfigsResponse)

@@ -55,7 +55,7 @@ const ProfileSettings: React.FC = () => {
       <Space direction="vertical" size="large" style={{ width: '100%' }}>
         <Card title="个人资料" styles={{ body: { paddingTop: 8 } }}>
           <Form form={profileForm} layout="vertical">
-            <Form.Item label="邮箱" name="email">
+            <Form.Item label="用户名" name="email">
               <Input disabled />
             </Form.Item>
             <Form.Item label="角色" name="role">

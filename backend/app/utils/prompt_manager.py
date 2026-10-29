@@ -239,7 +239,7 @@ class PromptManager:
         db = SessionLocal()
         try:
             from app.models.models import SystemConfig
-            config = db.query(SystemConfig).first()
+            config = db.query(SystemConfig).order_by(SystemConfig.updated_at.desc()).first()
             if config and config.prompt_configs:
                 # 如果数据库中有配置，使用数据库的配置
                 self._db_prompts = config.prompt_configs

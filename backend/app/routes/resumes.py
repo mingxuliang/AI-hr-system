@@ -17,6 +17,7 @@ from app.services.resume_service import (
 from app.models.models import ResumeStatus, RejectReasonCategory, User, UserRole, Resume
 from app.core.security import check_roles
 from app.routes.auth import get_current_user
+from app.utils.file_storage import validate_resume_file
 from typing import List, Dict, Any, Optional
 from uuid import UUID
 
@@ -35,10 +36,11 @@ def get_resumes_route(
     status: str = None,
     position_id: Optional[UUID] = None,
     reviewer_id: Optional[UUID] = None,
+    recruit_type: Optional[str] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    return get_resumes(db, skip=skip, limit=limit, candidate_name=candidate_name, status=status, position_id=position_id, reviewer_id=reviewer_id)
+    return get_resumes(db, skip=skip, limit=limit, candidate_name=candidate_name, status=status, position_id=position_id, reviewer_id=reviewer_id, recruit_type=recruit_type)
 
 # ==================== 简历查重 ====================
 
@@ -69,13 +71,7 @@ def check_duplicate_route(
 # ==================== 简历上传 ====================
 
 def validate_pdf_file(file: UploadFile):
-    if not file.filename or not file.filename.lower().endswith('.pdf'):
-        from fastapi import HTTPException
-        raise HTTPException(status_code=400, detail="只允许上传 PDF 格式的文件")
-    if file.content_type and file.content_type != 'application/pdf':
-        from fastapi import HTTPException
-        raise HTTPException(status_code=400, detail="只允许上传 PDF 格式的文件")
-    return file
+    return validate_resume_file(file)
 
 # 注意：单简历上传保持公开，因为应聘者可能通过公开链接投递
 @router.post("", response_model=ResumeResponse)
